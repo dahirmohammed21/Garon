@@ -1,186 +1,496 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, BookOpen, Bot, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, Clock3, Command, FileText, Folder, LayoutDashboard, Layers3, LoaderCircle, Menu, MessageSquare, Network, Pause, Play, Plus, Search, Send, Settings, Shield, ShieldCheck, Sparkles, Square, Trash2, Wallet, X, Zap } from 'lucide-react';
-import type { Agent, Page, State, Task, TaskStatus } from './types';
-
-const navigation: { id: Page; title: string; icon: typeof Activity }[] = [
-  { id: 'overview', title: 'Översikt', icon: LayoutDashboard },
-  { id: 'agents', title: 'Agentnätverk', icon: Network },
-  { id: 'tasks', title: 'Uppdragscentral', icon: Folder },
-  { id: 'activity', title: 'Aktivitetsövervakning', icon: Activity },
-  { id: 'approvals', title: 'Godkännanden', icon: ShieldCheck },
-  { id: 'finance', title: 'Finansiell översikt', icon: Wallet },
-  { id: 'chat', title: 'GARON Chat', icon: MessageSquare },
-  { id: 'memory', title: 'Minne & kunskap', icon: BookOpen },
-  { id: 'settings', title: 'Inställningar', icon: Settings },
-];
-const statusLabels: Record<TaskStatus, string> = { pending: 'Planerat', running: 'Pågående', done: 'Slutfört', cancelled: 'Avbrutet', approval: 'Väntar på beslut' };
-const money = (n: number) => new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(n);
-const date = (value: string, full = false) => new Date(value).toLocaleString('sv-SE', full ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' } : { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Stockholm' });
-const relative = (value: string) => { const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60000)); return minutes === 0 ? 'Just nu' : minutes < 60 ? `${minutes} min sedan` : minutes < 1440 ? `${Math.floor(minutes / 60)} tim sedan` : date(value, true); };
-const formObject = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); return Object.fromEntries(new FormData(event.currentTarget)); };
-function Badge({ children, tone = '' }: { children: ReactNode; tone?: string }) { return <span className={`badge ${tone}`}><span />{children}</span>; }
-function Empty({ icon: Icon = Folder, title, detail, action }: { icon?: typeof Folder; title: string; detail: string; action?: ReactNode }) { return <div className="empty"><div className="empty-icon"><Icon size={25} /></div><h3>{title}</h3><p>{detail}</p>{action}</div>; }
-function SectionTitle({ icon: Icon, title, description, action }: { icon: typeof Folder; title: string; description?: string; action?: ReactNode }) { return <div className="section-title"><span className="icon-box"><Icon size={18} /></span><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action && <div className="section-action">{action}</div>}</div>; }
-async function request(path: string, body?: unknown, method = 'POST') { const response = await fetch(`/api${path}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Kunde inte slutföra begäran.'); return result; }
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  ArrowUpRight,
+  Bell,
+  CheckCheck,
+  ChevronRight,
+  LoaderCircle,
+  Menu,
+  MessageSquare,
+  Plus,
+  Search,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import type { Page, State, Task } from "./types";
+import { pages } from "./lib/navigation";
+import { WorkspaceProvider } from "./lib/workspace";
+import { request } from "./lib/api";
+import Sidebar from "./components/Sidebar";
+import WorkspaceDialog from "./components/WorkspaceDialog";
+import HeadquartersPage from "./features/headquarters/HeadquartersPage";
+import {
+  BusinessesPage,
+  ProjectsPage,
+  IntegrationsPage,
+} from "./features/workspace/PlannedPages";
+import LeadershipPage from "./features/organization/LeadershipPage";
+import TasksPage from "./features/workspace/TasksPage";
+import AgentsPage from "./features/workspace/AgentsPage";
+import ActivityPage from "./features/workspace/ActivityPage";
+import ApprovalsPage from "./features/workspace/ApprovalsPage";
+import FinancePage from "./features/workspace/FinancePage";
+import MemoryPage from "./features/workspace/MemoryPage";
+import PartnerPage from "./features/partner/PartnerPage";
+import SettingsPage from "./features/workspace/SettingsPage";
 
 export default function App() {
+  const [lastVisit] = useState(() => localStorage.getItem("garon.lastVisit"));
+  useEffect(() => {
+    localStorage.setItem("garon.lastVisit", new Date().toISOString());
+  }, []);
   const [state, setState] = useState<State | null>(null);
-  const [page, setPage] = useState<Page>(() => { const key = location.hash.slice(1); return navigation.some(item => item.id === key) ? key as Page : 'overview'; });
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('garon.sidebar') === 'closed');
+  const [page, setPage] = useState<Page>(() => {
+    const key = location.hash.slice(1);
+    return pages.some((item) => item.id === key) ? (key as Page) : "overview";
+  });
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("garon.sidebar") === "closed",
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<'task' | 'agent' | 'note' | Task | null>(null);
+  const [modal, setModal] = useState<"task" | "agent" | "note" | Task | null>(
+    null,
+  );
   const [notifications, setNotifications] = useState(false);
   const [demo, setDemo] = useState(false);
-  const [period, setPeriod] = useState('week');
-  const [taskFilter, setTaskFilter] = useState('all');
-  const [listQuery, setListQuery] = useState('');
-  const [draft, setDraft] = useState('');
+  const [taskFilter, setTaskFilter] = useState("all");
+  const [listQuery, setListQuery] = useState("");
+  const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
-  async function load() { const response = await fetch('/api/state'); if (!response.ok) throw new Error('Kunde inte läsa data från GARON.'); const data = await response.json(); setState(data); setError(''); }
-  useEffect(() => { load().catch(e => setError(e.message)); const timer = setInterval(() => { load().catch(e => setError(e.message)); }, 15000); return () => clearInterval(timer); }, []);
-  useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); } }, [toast]);
-  useEffect(() => { const listener = () => { const key = location.hash.slice(1); if (navigation.some(item => item.id === key)) { setPage(key as Page); setListQuery(''); } }; window.addEventListener('hashchange', listener); return () => window.removeEventListener('hashchange', listener); }, []);
-  useEffect(() => { const listener = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key === 'k') { event.preventDefault(); searchRef.current?.focus(); } if (event.key === 'Escape') { setModal(null); setNotifications(false); setQuery(''); setMobileOpen(false); } }; window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener); }, []);
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [state?.messages.length, sending, page]);
+  async function load() {
+    const response = await fetch("/api/state");
+    if (!response.ok) throw new Error("Kunde inte läsa data från GARON.");
+    const data = await response.json();
+    setState(data);
+    setError("");
+  }
+  useEffect(() => {
+    load().catch((e) => setError(e.message));
+    const timer = setInterval(() => {
+      load().catch((e) => setError(e.message));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(""), 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+  useEffect(() => {
+    const listener = () => {
+      const key = location.hash.slice(1);
+      if (pages.some((item) => item.id === key)) {
+        setPage(key as Page);
+        setListQuery("");
+      }
+    };
+    window.addEventListener("hashchange", listener);
+    return () => window.removeEventListener("hashchange", listener);
+  }, []);
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape") {
+        setModal(null);
+        setNotifications(false);
+        setQuery("");
+        setMobileOpen(false);
+      }
+    };
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [state?.messages.length, sending, page]);
   useEffect(() => {
     if (!modal) return;
     const previous = document.activeElement as HTMLElement;
     const root = modalRef.current;
-    root?.querySelector<HTMLElement>('input, button')?.focus();
+    root?.querySelector<HTMLElement>("input, button")?.focus();
     const trap = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || !root) return;
-      const elements = [...root.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, select, a[href]')];
-      const first = elements[0], last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      if (event.key !== "Tab" || !root) return;
+      const elements = [
+        ...root.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), input, textarea, select, a[href]",
+        ),
+      ];
+      const first = elements[0],
+        last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
     };
-    document.addEventListener('keydown', trap);
-    return () => { document.removeEventListener('keydown', trap); previous?.focus(); };
+    document.addEventListener("keydown", trap);
+    return () => {
+      document.removeEventListener("keydown", trap);
+      previous?.focus();
+    };
   }, [modal]);
-  function go(next: Page) { setPage(next); location.hash = next; setMobileOpen(false); setQuery(''); setListQuery(''); setNotifications(false); }
-  function toggleSidebar() { if (window.innerWidth < 900) setMobileOpen(value => !value); else setCollapsed(value => { localStorage.setItem('garon.sidebar', value ? 'open' : 'closed'); return !value; }); }
-  async function mutate(path: string, body?: unknown, method = 'POST', message = 'Ändringen är sparad') {
+  function go(next: Page) {
+    setPage(next);
+    location.hash = next;
+    setMobileOpen(false);
+    setQuery("");
+    setListQuery("");
+    setNotifications(false);
+  }
+  function toggleSidebar() {
+    if (window.innerWidth < 900) setMobileOpen((value) => !value);
+    else
+      setCollapsed((value) => {
+        localStorage.setItem("garon.sidebar", value ? "open" : "closed");
+        return !value;
+      });
+  }
+  async function mutate(
+    path: string,
+    body?: unknown,
+    method = "POST",
+    message = "Ändringen är sparad",
+  ) {
     if (busy) return;
     setBusy(true);
-    try { await request(path, body, method); await load(); setModal(null); setToast(message); return true; }
-    catch (e) { setToast((e as Error).message); return false; }
-    finally { setBusy(false); }
+    try {
+      await request(path, body, method);
+      await load();
+      setModal(null);
+      setToast(message);
+      return true;
+    } catch (e) {
+      setToast((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
   async function sendChat(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim() || sending) return;
+    if (!draft.trim() || sending || !state?.ai.enabled) return;
     setSending(true);
-    try { await request('/chat', { message: draft }); setDraft(''); await load(); }
-    catch (e) { setToast((e as Error).message); await load().catch(() => {}); }
-    finally { setSending(false); }
+    try {
+      await request("/chat", { message: draft });
+      setDraft("");
+      await load();
+    } catch (e) {
+      setToast((e as Error).message);
+      await load().catch(() => {});
+    } finally {
+      setSending(false);
+    }
   }
-  if (!state) return <main className="boot"><div className="brand-orb" /><h1>GARON</h1><p>{error || 'Ansluter till din kontrollcentral…'}</p>{error ? <button className="button" onClick={() => load().catch(e => setError(e.message))}>Försök igen</button> : <LoaderCircle className="spin" />}</main>;
-
-  const approvals = state.tasks.filter(task => task.status === 'approval');
-  const activeTasks = state.tasks.filter(task => ['pending', 'running'].includes(task.status));
-  const totalDone = state.tasks.filter(task => task.status === 'done');
-  const matches = (value: string, q = listQuery) => value.toLocaleLowerCase('sv').includes(q.toLocaleLowerCase('sv'));
-  const searchResults = query.trim() ? [
-    ...state.tasks.filter(task => matches(`${task.title} ${task.description}`, query)).map(task => ({ id: task.id, title: task.title, type: 'Uppdrag', page: 'tasks' as Page, task })),
-    ...state.agents.filter(agent => matches(`${agent.name} ${agent.role}`, query)).map(agent => ({ id: agent.id, title: agent.name, type: 'Agent', page: 'agents' as Page, task: null })),
-    ...state.notes.filter(note => matches(`${note.title} ${note.content}`, query)).map(note => ({ id: note.id, title: note.title, type: 'Minne', page: 'memory' as Page, task: null })),
-  ].slice(0, 7) : [];
-  const pageInfo = navigation.find(item => item.id === page)!;
-  const descriptions: Record<Page, string> = {
-    overview: 'Din personliga AI-plattform för ökad kapacitet, kontroll och resultat.',
-    agents: 'Bygg ditt nätverk. Ge varje agent en tydlig roll och ett syfte.',
-    tasks: 'Från första idé till slutfört uppdrag. Allt på en plats.',
-    activity: 'En samlad bild av vad som händer i din arbetsyta.',
-    approvals: 'Du har sista ordet. Granska uppdrag som behöver ditt beslut.',
-    finance: 'Följ modellernas användning och håll kontroll över din budget.',
-    chat: 'Tänk högt, utforska idéer och planera tillsammans med GARON.',
-    memory: 'Ge dina tankar en plats. Samla kunskap för nästa steg.',
-    settings: 'Din plattform, på dina villkor.',
-  };
-  const selectedTasks = state.tasks.filter(task => (taskFilter === 'all' || task.status === taskFilter) && matches(`${task.title} ${task.description}`));
-  const chartDays = Array.from({ length: 7 }, (_, i) => { const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - 6 + i); const next = new Date(day); next.setDate(day.getDate() + 1); return { label: day.toLocaleDateString('sv-SE', { weekday: 'short' }), done: demo ? [3, 5, 4, 7, 5, 9, 6][i] : state.tasks.filter(t => t.status === 'done' && new Date(t.updatedAt) >= day && new Date(t.updatedAt) < next).length, pending: demo ? [4, 3, 6, 4, 8, 5, 4][i] : state.tasks.filter(t => new Date(t.createdAt) >= day && new Date(t.createdAt) < next).length }; });
-  const chartMax = Math.max(4, ...chartDays.map(day => Math.max(day.done, day.pending)));
-  const since = new Date(); since.setHours(0, 0, 0, 0); if (period === 'week') since.setDate(since.getDate() - 6);
-  const recentDone = totalDone.filter(task => new Date(task.updatedAt) >= since).length;
-  const demoActivity = [
-    { id: 'd1', title: 'Analys slutförd', detail: 'Sammanställning av veckans insikter', type: 'success', createdAt: new Date().toISOString() },
-    { id: 'd2', title: 'Nytt uppdrag planerat', detail: 'Research inför nästa projekt', type: 'info', createdAt: new Date(Date.now() - 14 * 60000).toISOString() },
-    { id: 'd3', title: 'Godkännande väntar', detail: 'Granska projektförslaget', type: 'warning', createdAt: new Date(Date.now() - 28 * 60000).toISOString() },
-  ];
-  const activityList = demo ? demoActivity : state.activity;
-
-  return <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-    {mobileOpen && <button className="mobile-backdrop" aria-label="Stäng navigation" onClick={() => setMobileOpen(false)} />}
-    <aside className="sidebar">
-      <div className="brand"><button className="brand-home" onClick={() => go('overview')} aria-label="GARON översikt"><span className="brand-orb" /><span>GARON</span></button><button className="icon-button sidebar-toggle" onClick={toggleSidebar} aria-label="Fäll in sidopanel"><ChevronLeft size={15} /></button></div>
-      <div className="sidebar-caption">KONTROLLCENTRAL</div>
-      <nav aria-label="Huvudnavigation">{navigation.slice(0, 6).map(({ id, title, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => go(id)} aria-current={page === id ? 'page' : undefined}><Icon size={18} /><span>{title}</span>{id === 'approvals' && approvals.length > 0 && <span className="nav-count">{approvals.length}</span>}</button>)}</nav>
-      <div className="sidebar-caption workspace-caption">ARBETSYTA</div>
-      <nav aria-label="Arbetsyta">{navigation.slice(6, 8).map(({ id, title, icon: Icon }) => <button key={id} className={`nav-item ${page === id ? 'active' : ''}`} onClick={() => go(id)} aria-current={page === id ? 'page' : undefined}><Icon size={18} /><span>{title}</span>{id === 'chat' && <span className="tiny-label">AI</span>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="private-panel"><Shield size={17} /><div><strong>Din privata arbetsyta</strong><span>Lokalt sparat. Under din kontroll.</span></div></div><button className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => go('settings')}><Settings size={18} />Inställningar</button><div className="version"><span className="green-dot" /> GARON v0.1 <span>PERSONAL AI</span></div></div>
-    </aside>
-
-    <div className="main-shell">
-      <header className="topbar"><button className="icon-button open-sidebar" onClick={toggleSidebar} aria-label="Öppna navigation"><Menu size={20} /></button><div className="global-search"><Search size={16} /><input ref={searchRef} aria-label="Global sökning" placeholder="Sök efter uppdrag, agenter eller insikter…" value={query} onChange={e => setQuery(e.target.value)} /><kbd>⌘ K</kbd>{query && <div className="search-results"><div className="search-caption">SÖKRESULTAT</div>{searchResults.length ? searchResults.map(result => <button key={result.id} onClick={() => { go(result.page); if (result.task) setModal(result.task); else setListQuery(result.title); }}><span>{result.title}</span><small>{result.type}</small><ArrowUpRight size={14} /></button>) : <p>Inga resultat för ”{query}”.</p>}</div>}</div><div className="topbar-right"><span className={`online-pill ${error ? 'offline' : ''}`}><span className="green-dot" />{error ? 'Anslutning saknas' : 'Systemet online'}</span><span className="topbar-divider" /><button className={`notification-button icon-button ${approvals.length ? 'has-notification' : ''}`} aria-label="Visa aviseringar" aria-expanded={notifications} onClick={() => setNotifications(value => !value)}><Bell size={18} /></button></div>
-        {notifications && <div className="notification-popover"><h3>Aviseringar</h3>{approvals.length ? <button onClick={() => go('approvals')}><ShieldCheck size={20} /><span><strong>{approvals.length} uppdrag väntar på beslut</strong><small>Öppna Godkännanden för att granska.</small></span><ChevronRight size={16} /></button> : <div className="notification-empty"><CheckCheck size={24} /><p>Du är uppdaterad.</p><small>Inga väntande godkännanden.</small></div>}</div>}
-      </header>
-
-      <main className="content" id="main-content">
-        {error && <div className="notice warning">{error} <button onClick={() => load().catch(e => setError(e.message))}>Försök igen</button></div>}
-        <div className={`page-heading ${page === 'overview' ? 'overview-heading' : ''}`}><div><div className="eyebrow">{page === 'overview' ? `VÄLKOMMEN TILLBAKA, ${state.settings.name.toLocaleUpperCase('sv')}` : 'GARON COMMAND CENTER'}</div><h1>{pageInfo.title}<span className="heading-dot">.</span></h1><p>{descriptions[page]}</p></div><div className="heading-right">{page === 'overview' ? <><span className="today-date">{new Date().toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Stockholm' })}</span><button className="button primary" onClick={() => setModal('task')}><Plus size={16} />Nytt uppdrag</button></> : page === 'tasks' ? <button className="button primary" onClick={() => setModal('task')}><Plus size={16} />Nytt uppdrag</button> : page === 'agents' ? <button className="button primary" onClick={() => setModal('agent')}><Plus size={16} />Skapa agent</button> : page === 'memory' ? <button className="button primary" onClick={() => setModal('note')}><Plus size={16} />Nytt minne</button> : null}</div>{page === 'overview' && <div className="planet" aria-hidden="true"><div /><i /><b /></div>}</div>
-
-        {page === 'overview' && <div className="overview-body">
-          <section className="system-panel panel"><div className="system-item"><span className="status-orb"><span /></span><div><span className="muted">Systemstatus</span><strong>{error ? 'Frånkopplad' : 'Online'}</strong><small>{error ? 'Kontrollera servern.' : 'Din kontrollcentral är redo.'}</small></div></div><div className="system-item"><span className="round-icon"><Layers3 size={24} /></span><div><span className="muted">Autonominivå</span><strong>Under din kontroll</strong><small>Du planerar och fattar besluten.</small></div></div><div className="system-item"><span className="round-icon"><Network size={24} /></span><div><span className="muted">Agentnätverk</span><strong>{state.agents.length} konfigurationer</strong><small>Agentkörning är ännu inte ansluten.</small></div></div></section>
-          <div className="overview-toolbar"><span><span className="green-dot" />Din arbetsyta i realtid</span><label className="demo-switch"><input type="checkbox" checked={demo} onChange={e => setDemo(e.target.checked)} /><span className="switch-track" />Visa design-demo</label></div>
-          {demo && <div className="notice demo-notice"><Sparkles size={16} />Design-demo: siffrorna och händelserna nedan är exempel. Dina sparade uppgifter påverkas inte.</div>}
-          <div className="stats-grid">{[
-            { title: 'Aktiva uppdrag', value: demo ? '12' : String(activeTasks.length), sub: demo ? 'Illustrativa demodata' : `${state.tasks.filter(t => t.status === 'running').length} pågående · ${state.tasks.filter(t => t.status === 'pending').length} planerade`, icon: Folder, page: 'tasks' as Page, tone: 'blue', extra: demo ? '+3' : null },
-            { title: 'Agentstatus', value: demo ? '4 / 6' : `${state.agents.filter(a => a.enabled).length} / ${state.agents.length}`, sub: 'Aktiverade konfigurationer', icon: Network, page: 'agents' as Page, tone: 'blue', extra: null },
-            { title: 'Slutförda uppdrag', value: demo ? '8' : String(totalDone.length), sub: 'Från idé till färdigt resultat', icon: CircleCheck, page: 'tasks' as Page, tone: 'green', extra: null },
-            { title: 'Väntande godkännanden', value: demo ? '3' : String(approvals.length), sub: approvals.length || demo ? 'Kräver din uppmärksamhet' : 'Inga beslut väntar just nu', icon: Shield, page: 'approvals' as Page, tone: 'orange', extra: null },
-          ].map(card => <button key={card.title} className={`stat-card panel ${card.tone}`} onClick={() => go(card.page)}><div className="stat-top"><span className="icon-box"><card.icon size={18} /></span><span>{card.title}</span><span className="circle-arrow"><ChevronRight size={14} /></span></div><div className="stat-number">{card.value}{card.extra && <span className="trend"><ArrowUpRight size={12} />{card.extra}</span>}</div><p>{card.sub}</p></button>)}</div>
-          <div className="overview-middle"><section className="panel summary-panel"><SectionTitle icon={FileText} title="Dagens sammanfattning" description="Små steg framåt. En tydlig bild av din utveckling." action={<label className="select-wrap"><span className="sr-only">Sammanfattningens period</span><select value={period} onChange={e => setPeriod(e.target.value)}><option value="week">Senaste 7 dagarna</option><option value="today">Idag</option></select><ChevronDown size={12} /></label>} /><div className="summary-numbers"><div><CircleCheck className="green" size={17} /><strong>{demo ? 8 : recentDone}</strong><small>Slutförda i perioden</small></div><div><LoaderCircle size={17} /><strong>{demo ? 2 : state.tasks.filter(t => t.status === 'running').length}</strong><small>Pågående just nu</small></div><div><Clock3 className="orange" size={17} /><strong>{demo ? 1 : approvals.length}</strong><small>Väntar på beslut</small></div><div><Zap className="purple" size={17} /><strong>{demo ? '4h 32m' : '—'}</strong><small>{demo ? 'Sparad tid · demo' : 'Sparad tid ej uppmätt'}</small></div></div><div className="chart-caption">UPPDRAG · SENASTE 7 DAGARNA{demo && <span>DEMODATA</span>}</div><div className="chart-area"><div className="chart-y"><span>{chartMax}</span><span>{Math.round(chartMax / 2)}</span><span>0</span></div><div className="bar-chart"><div className="chart-grid" />{chartDays.map(day => <div className="bar-group" key={day.label} title={`${day.label}: ${day.pending} skapade, ${day.done} slutförda`}><div className="bars"><span className="bar created" style={{ height: `${Math.max(day.pending ? 3 : 0, day.pending / chartMax * 100)}%` }} /><span className="bar done" style={{ height: `${Math.max(day.done ? 3 : 0, day.done / chartMax * 100)}%` }} /></div><span className="bar-label">{day.label}</span></div>)}</div></div><div className="chart-legend"><span><i className="legend-created" />Skapade</span><span><i className="legend-done" />Slutförda</span>{!demo && !state.tasks.length && <small>Ditt första uppdrag börjar här.</small>}</div></section>
-          <section className="panel activity-panel"><SectionTitle icon={Zap} title="Senaste aktivitet" description="Det senaste från din arbetsyta." action={<button className="text-button" onClick={() => go('activity')}>Visa alla <ArrowRight size={13} /></button>} />{activityList.length ? <div className="timeline">{activityList.slice(0, 5).map(event => <div className={`timeline-item ${event.type}`} key={event.id}><span className="timeline-dot" /><span className="event-icon"><FileText size={15} /></span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{relative(event.createdAt)}</time></div>)}</div> : <Empty icon={Activity} title="En ny början" detail="När du skapar ditt första uppdrag visas aktiviteten här." action={<button className="text-button" onClick={() => setModal('task')}>Skapa ett uppdrag <ArrowRight size={14} /></button>} />}</section></div>
-          <section className="core-banner"><div className="core-banner-orb"><Sparkles size={23} /></div><div><span className="eyebrow">MÖT GARON CORE</span><h3>Stora idéer börjar med ett samtal.</h3><p>{state.ai.configured ? 'Din AI-anslutning är konfigurerad. Börja utforska din nästa idé.' : 'Anslut en AI-modell och få en partner att tänka tillsammans med.'}</p></div><button className="button" onClick={() => go('chat')}>Öppna GARON Chat <ArrowUpRight size={16} /></button></section>
-          <footer className="workspace-footer"><span><ShieldCheck size={13} />Din arbetsyta. Dina beslut.</span><span>Byggt för nästa steg.</span></footer>
-        </div>}
-
-        {page === 'tasks' && <><div className="list-toolbar"><div className="filter-tabs">{[['all', 'Alla', state.tasks.length], ['pending', 'Planerade', state.tasks.filter(t => t.status === 'pending').length], ['running', 'Pågående', state.tasks.filter(t => t.status === 'running').length], ['done', 'Slutförda', totalDone.length], ['approval', 'Väntar på beslut', approvals.length], ['cancelled', 'Avbrutna', state.tasks.filter(t => t.status === 'cancelled').length]].map(([key, label, count]) => <button key={key} className={taskFilter === key ? 'selected' : ''} onClick={() => setTaskFilter(String(key))}>{label}<span>{count}</span></button>)}</div><div className="inline-search"><Search size={15} /><input aria-label="Sök uppdrag" placeholder="Sök uppdrag…" value={listQuery} onChange={e => setListQuery(e.target.value)} /></div></div><div className="notice"><Shield size={16} />Uppdrag hanteras manuellt. Statusen ”Pågående” startar ingen AI-agent.</div>{selectedTasks.length ? <div className="task-list panel"><div className="task-list-head"><span>UPPDRAG</span><span>PRIORITET</span><span>STATUS</span><span>SKAPAT</span><span /></div>{selectedTasks.map(task => <div className="task-row" key={task.id}><button className="task-title" onClick={() => setModal(task)}><span className={`task-symbol ${task.status}`} >{task.status === 'done' ? <Check size={17} /> : <Folder size={17} />}</span><span><strong>{task.title}</strong><small>{state.agents.find(a => a.id === task.agentId)?.name || 'Personligt uppdrag'}</small></span></button><span className={`priority ${task.priority}`}><i />{task.priority === 'high' ? 'Hög' : task.priority === 'low' ? 'Låg' : 'Normal'}</span><Badge tone={task.status}>{statusLabels[task.status]}</Badge><time>{date(task.createdAt, true)}</time><button className="icon-button" aria-label={`Öppna ${task.title}`} onClick={() => setModal(task)}><ChevronRight size={17} /></button></div>)}</div> : <div className="panel"><Empty title={state.tasks.length ? 'Inga uppdrag matchar' : 'Ge din nästa idé ett uppdrag'} detail={state.tasks.length ? 'Prova en annan sökning eller ett annat filter.' : 'Skapa ett uppdrag, välj prioritet och följ det hela vägen till mål.'} action={<button className="button primary" onClick={() => setModal('task')}><Plus size={16} />Skapa uppdrag</button>} /></div>}</>}
-
-        {page === 'agents' && <><div className="notice"><Network size={17} />Agentrollerna sparas som konfigurationer. Automatisk körning, verktyg och samarbete är inte implementerade i den här versionen.</div><div className="inline-search standalone-search"><Search size={16} /><input aria-label="Sök agent" placeholder="Sök bland dina agenter…" value={listQuery} onChange={e => setListQuery(e.target.value)} /></div>{state.agents.length ? <div className="agent-grid">{state.agents.filter(agent => matches(`${agent.name} ${agent.role}`)).map((agent, i) => <AgentCard key={agent.id} agent={agent} index={i} tasks={state.tasks} busy={busy} onToggle={() => mutate(`/agents/${agent.id}`, { enabled: !agent.enabled }, 'PATCH')} />)}</div> : <div className="panel"><Empty icon={Network} title="Ett nätverk som växer med dig" detail="Börja med att definiera en agents namn och roll. Du kan sedan koppla uppdrag till den." action={<button className="button primary" onClick={() => setModal('agent')}><Plus size={16} />Skapa din första agentroll</button>} /></div>}</>}
-
-        {page === 'activity' && <><div className="list-toolbar"><div className="filter-tabs"><span className="tab-label">{state.activity.length} senaste händelserna</span></div><div className="inline-search"><Search size={15} /><input aria-label="Sök i aktivitetslogg" placeholder="Sök i aktivitetsloggen…" value={listQuery} onChange={e => setListQuery(e.target.value)} /></div></div><section className="panel full-timeline">{state.activity.filter(event => matches(`${event.title} ${event.detail}`)).length ? state.activity.filter(event => matches(`${event.title} ${event.detail}`)).map(event => <div key={event.id} className={`timeline-item ${event.type}`}><span className="timeline-dot" /><span className="event-icon"><Activity size={17} /></span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{date(event.createdAt, true)}</time></div>) : <Empty icon={Activity} title="Här får ditt arbete en historia" detail={listQuery ? 'Inga händelser matchar sökningen.' : 'Skapa ett uppdrag eller spara ett minne för att komma igång.'} />}</section></>}
-
-        {page === 'approvals' && <>{approvals.length ? <div className="approval-list">{approvals.map(task => <section className="panel approval-card" key={task.id}><div className="approval-heading"><span className="icon-box orange"><ShieldCheck size={22} /></span><div><Badge tone="approval">Väntar på ditt beslut</Badge><h2>{task.title}</h2></div><time>{date(task.createdAt, true)}</time></div><p className="approval-description">{task.description || 'Ingen beskrivning angiven. Granska uppdragets namn innan du fattar beslut.'}</p><div className="approval-facts"><div><small>VAD GODKÄNNER DU?</small><p>Att flytta uppdraget till planerade uppdrag.</p></div><div><small>KONSEKVENS</small><p>Inga externa åtgärder utförs. Ingen AI startas.</p></div></div><div className="approval-actions"><button className="button" disabled={busy} onClick={() => mutate(`/tasks/${task.id}/decision`, { decision: 'reject' }, 'POST', 'Uppdraget har avslagits')}><X size={16} />Avslå</button><button className="button primary" disabled={busy} onClick={() => mutate(`/tasks/${task.id}/decision`, { decision: 'approve' }, 'POST', 'Uppdraget är godkänt')}><Check size={16} />Godkänn</button></div></section>)}</div> : <div className="panel"><Empty icon={ShieldCheck} title="Allt är under kontroll" detail="Inga uppdrag väntar på godkännande. Markera ”Kräver mitt godkännande” när du skapar ett uppdrag för att granska det här." action={<button className="button" onClick={() => setModal('task')}><Plus size={16} />Nytt uppdrag</button>} /></div>}</>}
-
-        {page === 'finance' && <><div className="finance-cards"><section className="panel finance-stat"><span className="icon-box"><Wallet size={20} /></span><p>Registrerad AI-kostnad denna månad</p><h2>{money(state.ai.spent)}</h2><small>Beräknad från tokenanvändning och modellpris</small></section><section className="panel finance-stat"><span className="icon-box green"><Shield size={20} /></span><p>Månadsbudget</p><h2>{money(state.settings.budget)}</h2><small>Ny månad räknas från UTC</small></section><section className="panel finance-stat"><span className="icon-box purple"><Zap size={20} /></span><p>Återstående utrymme</p><h2>{money(Math.max(0, state.settings.budget - state.ai.spent))}</h2><small>Budgeten kontrolleras före varje AI-anrop</small></section></div><section className="panel budget-panel"><SectionTitle icon={ShieldCheck} title="Din budgetgräns" description="En lokal spärr för AI-chatten i den här installationen." action={<button className="text-button" onClick={() => go('settings')}>Justera budget <ArrowRight size={14} /></button>} /><div className="budget-track"><span style={{ width: `${state.settings.budget ? Math.min(100, state.ai.spent / state.settings.budget * 100) : 0}%` }} /></div><div className="budget-labels"><span>{money(state.ai.spent)} registrerat</span><span>{money(state.settings.budget)} budget</span></div><p className="fine-print">Kostnaderna är beräknade, inte en faktura. Osäkra anrop behåller en konservativ reservation. Leverantörens priser kan ändras; sätt även en gräns hos leverantören.</p></section><section className="panel usage-panel"><SectionTitle icon={Activity} title="AI-användning" description="Endast anrop från den här GARON-installationen visas." />{state.usage.length ? <div className="usage-table"><table><thead><tr><th>Datum</th><th>Modell</th><th>Token in / ut</th><th>Kostnad</th></tr></thead><tbody>{state.usage.map(item => <tr key={item.id}><td>{date(item.createdAt, true)}</td><td>{item.model}</td><td>{item.inputTokens} / {item.outputTokens}</td><td>{money(item.cost)}{item.estimated && <small>Reservation</small>}</td></tr>)}</tbody></table></div> : <Empty icon={Wallet} title="Inga AI-kostnader ännu" detail="När du använder en ansluten AI-modell visas anrop och beräknad kostnad här." />}</section></>}
-
-        {page === 'memory' && <><div className="notice"><BookOpen size={16} />Dina anteckningar sparas i den lokala databasen. De skickas inte automatiskt till AI-chatten.</div><div className="inline-search standalone-search"><Search size={16} /><input aria-label="Sök i minnet" placeholder="Sök i din kunskap…" value={listQuery} onChange={e => setListQuery(e.target.value)} /></div>{state.notes.length ? <div className="notes-grid">{state.notes.filter(note => matches(`${note.title} ${note.content}`)).map(note => <article className="panel note-card" key={note.id}><div><span className="icon-box"><FileText size={18} /></span><button className="icon-button danger-hover" aria-label={`Ta bort ${note.title}`} onClick={() => { if (confirm(`Ta bort minnet ”${note.title}”?`)) mutate(`/notes/${note.id}`, {}, 'DELETE', 'Minnet är borttaget'); }}><Trash2 size={15} /></button></div><h2>{note.title}</h2><p>{note.content}</p><time>{date(note.createdAt, true)}</time></article>)}</div> : <div className="panel"><Empty icon={BookOpen} title="Bygg din egen kunskapsbas" detail="Spara idéer, projektinformation och sådant du vill komma ihåg. Allt finns kvar nästa gång du öppnar GARON." action={<button className="button primary" onClick={() => setModal('note')}><Plus size={16} />Spara ditt första minne</button>} /></div>}</>}
-
-        {page === 'chat' && <section className="panel chat-panel"><div className="chat-panel-header"><span className="core-mini"><Sparkles size={20} /></span><div><strong>GARON Core</strong><span>{state.ai.configured ? state.ai.model : 'Väntar på AI-anslutning'}</span></div><Badge tone={state.ai.configured ? 'pending' : ''}>{state.ai.configured ? 'Konfigurerad' : 'Ej ansluten'}</Badge></div><div className="chat-messages">{!state.messages.length && <div className="chat-welcome"><div className="chat-orb"><Sparkles size={32} /></div><div className="eyebrow">DIN PARTNER FÖR NÄSTA IDÉ</div><h2>Vad vill du utforska, {state.settings.name}?</h2><p>{state.ai.configured ? 'Börja med en fråga, en idé eller något du vill planera.' : 'Uppdrag, minne och kontrollpanelen fungerar redan. Anslut en AI-modell i inställningarna för att börja samtala.'}</p><div className="prompt-suggestions">{['Hjälp mig planera mitt nästa projekt', 'Hur kan jag strukturera min arbetsvecka?', 'Bolla en idé med mig'].map(prompt => <button key={prompt} onClick={() => setDraft(prompt)}><MessageSquare size={15} />{prompt}<ArrowUpRight size={14} /></button>)}</div>{!state.ai.configured && <button className="text-button" onClick={() => go('settings')}>Visa anslutningsinstruktioner <ArrowRight size={14} /></button>}</div>}{state.messages.map(message => <article className={`chat-message ${message.role}`} key={message.id}><span className="message-marker">{message.role === 'assistant' ? <Sparkles size={17} /> : <Command size={17} />}</span><div><strong>{message.role === 'assistant' ? 'GARON' : 'Du'}<time>{date(message.createdAt)}</time></strong><p>{message.content}</p></div></article>)}{sending && <div className="chat-message"><span className="message-marker"><Sparkles size={17} /></span><p className="thinking"><LoaderCircle size={15} className="spin" />GARON tänker…</p></div>}<div ref={chatEnd} /></div><form className="chat-form" onSubmit={sendChat}><label className="sr-only" htmlFor="chat-input">Meddelande till GARON</label><textarea id="chat-input" placeholder="Skriv till GARON…" value={draft} maxLength={6000} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} rows={2} /><button className="send-button" type="submit" disabled={sending || !draft.trim() || !state.ai.configured} aria-label="Skicka meddelande">{sending ? <LoaderCircle className="spin" size={19} /> : <ArrowUpRight size={22} />}</button></form><div className="chat-disclaimer"><Shield size={12} />Chatten kan ge råd och förslag. Den utför inga åtgärder och läser inte dina uppdrag eller anteckningar.</div></section>}
-
-        {page === 'settings' && <div className="settings-grid"><section className="panel settings-card"><SectionTitle icon={Settings} title="Din arbetsyta" description="Ett personligt utrymme för ditt arbete." /><form onSubmit={event => { const data = formObject(event); mutate('/settings', { name: data.name, budget: Number(data.budget) }, 'PATCH'); }}><label>Ditt namn<input name="name" required maxLength={60} defaultValue={state.settings.name} /></label><label>Månadsbudget för AI (USD)<input name="budget" type="number" min="0" max="10000" step="0.01" required defaultValue={state.settings.budget} /></label><p className="fine-print">0 USD blockerar alla AI-anrop. Budgeten gäller bara denna installation och återställs per kalendermånad i UTC.</p><button className="button primary" disabled={busy} type="submit"><Check size={16} />Spara inställningar</button></form></section><section className="panel settings-card"><SectionTitle icon={Layers3} title="AI-anslutning" description="Välj din modell. Behåll kontrollen." /><div className="provider-status"><span className="icon-box"><Sparkles size={20} /></span><div><strong>{state.ai.provider === 'openai' ? 'OpenAI' : state.ai.provider === 'anthropic' ? 'Anthropic' : 'Ingen leverantör ansluten'}</strong><p>{state.ai.model || 'Anslut en leverantör för att aktivera chatten.'}</p></div><Badge tone={state.ai.configured ? 'pending' : ''}>{state.ai.configured ? 'Konfigurerad' : 'Ej ansluten'}</Badge></div><p className="settings-instruction">Skapa filen <code>.env</code> i projektets rot och lägg till <strong>en</strong> av dessa variabler. Starta sedan om servern.</p><pre>OPENAI_API_KEY=din_nyckel</pre><span className="or-label">eller</span><pre>ANTHROPIC_API_KEY=din_nyckel</pre><p className="fine-print">Nyckeln stannar på servern och visas aldrig i gränssnittet. OpenAI väljs om båda är satta. Standardmodeller: gpt-4.1-mini eller claude-sonnet-4-20250514. Anslutningen verifieras vid första meddelandet.</p></section><section className="panel settings-card"><SectionTitle icon={ShieldCheck} title="Data & integritet" description="Lokal lagring, tydliga gränser." /><div className="storage-line"><CircleCheck size={18} className="green" /><div><strong>SQLite-databas</strong><p>Uppdrag, anteckningar och chatthistorik sparas i <code>.garon/garon.sqlite</code>.</p></div></div><div className="storage-line"><Shield size={18} /><div><strong>Privat användning</strong><p>Ingen inloggning finns. Servern binds lokalt som standard. Använd privat åtkomst och autentisering innan du gör den tillgänglig på internet.</p></div></div><a href="/api/export" download className="button"><ArrowDownToLine size={16} />Exportera mina data</a></section><section className="panel settings-card roadmap"><SectionTitle icon={Zap} title="En grund att växa med" description="GARON v0.1 · Din personliga AI-plattform" /><ul><li><Check size={15} />Uppdrag och godkännanden</li><li><Check size={15} />Beständigt minne och aktivitetslogg</li><li><Check size={15} />AI-chatt med valfri leverantör</li><li><Check size={15} />Lokal budgetkontroll</li><li className="future"><Clock3 size={15} />Automatisk agentkörning och verktyg · framtida steg</li></ul></section></div>}
+  if (!state)
+    return (
+      <main className="boot">
+        <div className="brand-orb" />
+        <h1>GARON</h1>
+        <p>{error || "Ansluter till din kontrollcentral…"}</p>
+        {error ? (
+          <button
+            className="button"
+            onClick={() => load().catch((e) => setError(e.message))}
+          >
+            Försök igen
+          </button>
+        ) : (
+          <LoaderCircle className="spin" />
+        )}
       </main>
-    </div>
+    );
 
-    {modal && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setModal(null); }}><div ref={modalRef} className="modal panel" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-header"><div><span className="eyebrow">GARON · ARBETSYTA</span><h2 id="modal-title">{modal === 'task' ? 'Ett nytt uppdrag' : modal === 'agent' ? 'Skapa en agentroll' : modal === 'note' ? 'Spara ett minne' : 'Uppdragsdetaljer'}</h2></div><button className="icon-button" aria-label="Stäng dialog" onClick={() => setModal(null)}><X size={20} /></button></div>
-      {modal === 'task' && <form onSubmit={event => { const data = formObject(event); mutate('/tasks', { ...data, requiresApproval: data.requiresApproval === 'on' }, 'POST', 'Ditt nya uppdrag är sparat'); }}><label>Vad vill du göra?<input autoFocus name="title" placeholder="Till exempel: Planera nästa projekt" maxLength={160} required /></label><label>Beskrivning <span className="optional">Valfritt</span><textarea name="description" placeholder="Ge uppdraget lite sammanhang…" maxLength={3000} rows={4} /></label><div className="form-row"><label>Prioritet<select name="priority" defaultValue="normal"><option value="low">Låg</option><option value="normal">Normal</option><option value="high">Hög</option></select></label><label>Agentroll<select name="agentId"><option value="">Personligt uppdrag</option>{state.agents.filter(agent => agent.enabled).map(agent => <option value={agent.id} key={agent.id}>{agent.name}</option>)}</select></label></div><label className="checkbox-label"><input type="checkbox" name="requiresApproval" /><span>Kräver mitt godkännande<small>Uppdraget inväntar ditt beslut innan det planeras.</small></span></label><div className="modal-footer"><button type="button" className="button" onClick={() => setModal(null)}>Avbryt</button><button className="button primary" disabled={busy} type="submit"><Plus size={16} />Skapa uppdrag</button></div></form>}
-      {modal === 'agent' && <form onSubmit={event => { const data = formObject(event); mutate('/agents', data, 'POST', 'Agentrollen är sparad'); }}><p className="modal-description">Definiera en roll för din framtida AI-arbetsstyrka. Detta skapar en konfiguration, ingen körande agent.</p><label>Agentens namn<input name="name" placeholder="Till exempel: Research" maxLength={80} required /></label><label>Roll och syfte<textarea name="role" placeholder="Vilken typ av arbete ska agenten hjälpa till med?" maxLength={500} rows={4} required /></label><div className="modal-footer"><button type="button" className="button" onClick={() => setModal(null)}>Avbryt</button><button className="button primary" disabled={busy} type="submit"><Plus size={16} />Skapa agentroll</button></div></form>}
-      {modal === 'note' && <form onSubmit={event => { const data = formObject(event); mutate('/notes', data, 'POST', 'Minnet är sparat'); }}><label>Rubrik<input name="title" placeholder="Vad vill du komma ihåg?" maxLength={160} required /></label><label>Anteckning<textarea name="content" placeholder="En idé, ett mål eller något du har lärt dig…" maxLength={10000} rows={7} required /></label><div className="modal-footer"><button type="button" className="button" onClick={() => setModal(null)}>Avbryt</button><button className="button primary" disabled={busy} type="submit"><Check size={16} />Spara minne</button></div></form>}
-      {typeof modal === 'object' && <><form onSubmit={event => { const data = formObject(event); mutate(`/tasks/${modal.id}`, data, 'PATCH'); }}><label>Uppdrag<input name="title" defaultValue={modal.title} required maxLength={160} /></label><label>Beskrivning<textarea name="description" defaultValue={modal.description} rows={4} maxLength={3000} /></label>{modal.status === 'approval' ? <div className="notice warning"><ShieldCheck size={16} />Det här uppdraget väntar på godkännande.</div> : <label>Status<select name="status" defaultValue={modal.status}>{(['pending', 'running', 'done', 'cancelled'] as TaskStatus[]).map(status => <option value={status} key={status}>{statusLabels[status]}</option>)}</select></label>}<div className="modal-footer"><button type="button" className="icon-button danger-hover" disabled={busy} aria-label="Ta bort uppdrag" onClick={() => { if (confirm(`Ta bort ”${modal.title}”?`)) mutate(`/tasks/${modal.id}`, {}, 'DELETE', 'Uppdraget är borttaget'); }}><Trash2 size={18} /></button>{modal.status === 'approval' && <button className="button" type="button" onClick={() => { setModal(null); go('approvals'); }}>Granska beslut</button>}<button className="button primary" disabled={busy} type="submit"><Check size={16} />Spara ändringar</button></div></form><small className="fine-print">Skapat {date(modal.createdAt, true)} · Manuell uppdragshantering</small></>}
-    </div></div>}
-    {toast && <div className="toast" role="status"><span>{toast}</span><button className="icon-button" aria-label="Stäng meddelande" onClick={() => setToast('')}><X size={16} /></button></div>}
-  </div>;
-}
+  const approvals = state.tasks.filter((task) => task.status === "approval");
+  const matches = (value: string, q = listQuery) =>
+    value.toLocaleLowerCase("sv").includes(q.toLocaleLowerCase("sv"));
+  const searchResults = query.trim()
+    ? [
+        ...state.tasks
+          .filter((task) => matches(`${task.title} ${task.description}`, query))
+          .map((task) => ({
+            id: task.id,
+            title: task.title,
+            type: "Uppdrag",
+            page: "tasks" as Page,
+            task,
+          })),
+        ...state.agents
+          .filter((agent) => matches(`${agent.name} ${agent.role}`, query))
+          .map((agent) => ({
+            id: agent.id,
+            title: agent.name,
+            type: "Agent",
+            page: "agents" as Page,
+            task: null,
+          })),
+        ...state.notes
+          .filter((note) => matches(`${note.title} ${note.content}`, query))
+          .map((note) => ({
+            id: note.id,
+            title: note.title,
+            type: "Minne",
+            page: "memory" as Page,
+            task: null,
+          })),
+      ].slice(0, 7)
+    : [];
+  const pageInfo = pages.find((item) => item.id === page)!;
 
-function AgentCard({ agent, tasks, busy, onToggle, index }: { agent: Agent; tasks: Task[]; busy: boolean; onToggle: () => void; index: number }) {
-  const taskCount = tasks.filter(task => task.agentId === agent.id && !['done', 'cancelled'].includes(task.status)).length;
-  return <article className="panel agent-card"><div className="agent-card-top"><span className={`agent-symbol color-${index % 3}`}><Bot size={27} /></span><Badge tone={agent.enabled ? 'pending' : 'cancelled'}>{agent.enabled ? 'Konfigurerad' : 'Pausad'}</Badge></div><h2>{agent.name}</h2><p>{agent.role}</p><div className="agent-meta"><span><Folder size={14} />{taskCount} tilldelade uppdrag</span><span><Square size={12} />Ingen aktiv körning</span></div><div className="agent-card-footer"><small>Agentroll · sparad lokalt</small><button className="button compact" disabled={busy} onClick={onToggle}>{agent.enabled ? <Pause size={14} /> : <Play size={14} />}{agent.enabled ? 'Pausa' : 'Aktivera'}</button></div></article>;
+  const workspace = {
+    state,
+    page,
+    collapsed,
+    mobileOpen,
+    toggleSidebar,
+    go,
+    busy,
+    mutate,
+    modal,
+    setModal,
+    modalRef,
+    listQuery,
+    setListQuery,
+    taskFilter,
+    setTaskFilter,
+    draft,
+    setDraft,
+    sending,
+    sendChat,
+    chatEnd,
+    demo,
+    setDemo,
+    lastVisit,
+  };
+  return (
+    <WorkspaceProvider value={workspace}>
+      <div
+        className={`app-shell ${collapsed ? "sidebar-collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
+      >
+        {mobileOpen && (
+          <button
+            className="mobile-backdrop"
+            aria-label="Stäng navigation"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
+        <Sidebar />
+
+        <div className="main-shell">
+          <header className="topbar">
+            <button
+              className="icon-button open-sidebar"
+              onClick={toggleSidebar}
+              aria-label="Öppna navigation"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="global-search">
+              <Search size={16} />
+              <input
+                ref={searchRef}
+                aria-label="Global sökning"
+                placeholder="Sök efter uppdrag, agenter eller insikter…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <kbd>⌘ K</kbd>
+              {query && (
+                <div className="search-results">
+                  <div className="search-caption">SÖKRESULTAT</div>
+                  {searchResults.length ? (
+                    searchResults.map((result) => (
+                      <button
+                        key={result.id}
+                        onClick={() => {
+                          go(result.page);
+                          if (result.task) setModal(result.task);
+                          else setListQuery(result.title);
+                        }}
+                      >
+                        <span>{result.title}</span>
+                        <small>{result.type}</small>
+                        <ArrowUpRight size={14} />
+                      </button>
+                    ))
+                  ) : (
+                    <p>Inga resultat för ”{query}”.</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="topbar-right">
+              <span className={`online-pill ${error ? "offline" : ""}`}>
+                <span className="green-dot" />
+                {error ? "Anslutning saknas" : "Systemet online"}
+              </span>
+              <span className="topbar-divider" />
+              <button
+                className={`notification-button icon-button ${approvals.length ? "has-notification" : ""}`}
+                aria-label="Visa aviseringar"
+                aria-expanded={notifications}
+                onClick={() => setNotifications((value) => !value)}
+              >
+                <Bell size={18} />
+              </button>
+            </div>
+            {notifications && (
+              <div className="notification-popover">
+                <h3>Aviseringar</h3>
+                {approvals.length ? (
+                  <button onClick={() => go("approvals")}>
+                    <ShieldCheck size={20} />
+                    <span>
+                      <strong>
+                        {approvals.length} uppdrag väntar på beslut
+                      </strong>
+                      <small>Öppna Godkännanden för att granska.</small>
+                    </span>
+                    <ChevronRight size={16} />
+                  </button>
+                ) : (
+                  <div className="notification-empty">
+                    <CheckCheck size={24} />
+                    <p>Du är uppdaterad.</p>
+                    <small>Inga väntande godkännanden.</small>
+                  </div>
+                )}
+              </div>
+            )}
+          </header>
+
+          <main className="content" id="main-content">
+            {error && (
+              <div className="notice warning">
+                {error}{" "}
+                <button
+                  onClick={() => load().catch((e) => setError(e.message))}
+                >
+                  Försök igen
+                </button>
+              </div>
+            )}
+            <div
+              className={`page-heading ${page === "overview" ? "overview-heading" : ""}`}
+            >
+              <div>
+                <div className="eyebrow">
+                  {page === "overview"
+                    ? `VÄLKOMMEN TILLBAKA, ${state.settings.name.toLocaleUpperCase("sv")}`
+                    : "GARON · HUVUDKONTOR"}
+                </div>
+                <h1>
+                  {page === "tasks" ? "Fristående uppdrag" : pageInfo.title}
+                  <span className="heading-dot">.</span>
+                </h1>
+                <p>{pageInfo.description}</p>
+              </div>
+              <div className="heading-right">
+                {page === "overview" ? (
+                  <>
+                    <span className="today-date">
+                      {new Date().toLocaleDateString("sv-SE", {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                        timeZone: "Europe/Stockholm",
+                      })}
+                    </span>
+                    <button
+                      className="button primary"
+                      onClick={() => go("chat")}
+                    >
+                      <MessageSquare size={16} />
+                      Prata med GARON
+                    </button>
+                  </>
+                ) : page === "tasks" ? (
+                  <button
+                    className="button primary"
+                    onClick={() => setModal("task")}
+                  >
+                    <Plus size={16} />
+                    Nytt uppdrag
+                  </button>
+                ) : page === "agents" ? (
+                  <button
+                    className="button primary"
+                    onClick={() => setModal("agent")}
+                  >
+                    <Plus size={16} />
+                    Skapa agent
+                  </button>
+                ) : page === "memory" ? (
+                  <button
+                    className="button primary"
+                    onClick={() => setModal("note")}
+                  >
+                    <Plus size={16} />
+                    Nytt minne
+                  </button>
+                ) : null}
+              </div>
+              {page === "overview" && (
+                <div className="planet" aria-hidden="true">
+                  <div />
+                  <i />
+                  <b />
+                </div>
+              )}
+            </div>
+
+            {page === "overview" && <HeadquartersPage />}
+
+            {page === "businesses" && <BusinessesPage />}
+            {page === "projects" && <ProjectsPage />}
+            {page === "leadership" && <LeadershipPage />}
+            {page === "integrations" && <IntegrationsPage />}
+
+            {page === "tasks" && <TasksPage />}
+
+            {page === "agents" && <AgentsPage />}
+
+            {page === "activity" && <ActivityPage />}
+
+            {page === "approvals" && <ApprovalsPage />}
+
+            {page === "finance" && <FinancePage />}
+
+            {page === "memory" && <MemoryPage />}
+
+            {page === "chat" && <PartnerPage />}
+
+            {page === "settings" && <SettingsPage />}
+          </main>
+        </div>
+
+        <WorkspaceDialog />
+        {toast && (
+          <div className="toast" role="status">
+            <span>{toast}</span>
+            <button
+              className="icon-button"
+              aria-label="Stäng meddelande"
+              onClick={() => setToast("")}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+    </WorkspaceProvider>
+  );
 }

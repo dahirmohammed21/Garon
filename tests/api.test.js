@@ -53,7 +53,7 @@ test('validering och främmande webbplatser blockeras', async t => {
   assert.equal((await f.call('/settings', { budget: '100' }, 'PATCH')).status, 400);
   assert.equal((await f.call('/tasks', { title: 'Främmande' }, 'POST', { Origin: 'https://evil.example' })).status, 403);
   assert.equal((await f.call('/tasks', { title: 'Främmande' }, 'POST', { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
-  assert.equal((await f.call('/chat', { message: 'Hej' })).status, 503);
+  assert.equal((await f.call('/chat', { message: 'Hej' })).status, 403);
 });
 
 test('SQLite-data finns kvar efter omstart', async t => {
@@ -71,7 +71,7 @@ test('SQLite-data finns kvar efter omstart', async t => {
 
 test('AI-anrop sparar verkligt svar och användning, budgeten spärrar nästa anrop', async t => {
   let calls = 0;
-  const f = await fixture({ env: { OPENAI_API_KEY: 'test-only' }, fetchImpl: async (url, options) => {
+  const f = await fixture({ allowAI: true, env: { OPENAI_API_KEY: 'test-only' }, fetchImpl: async (url, options) => {
     calls++;
     assert.equal(url, 'https://api.openai.com/v1/chat/completions');
     const body = JSON.parse(options.body);
@@ -92,17 +92,71 @@ test('AI-anrop sparar verkligt svar och användning, budgeten spärrar nästa an
 
 test('Anthropic-format och osäkra anrop hanteras utan simulerade svar', async t => {
   let options;
-  const f = await fixture({ env: { ANTHROPIC_API_KEY: 'test-only' }, fetchImpl: async (_url, config) => {
+  const f = await fixture({ allowAI: true, env: { ANTHROPIC_API_KEY: 'test-only' }, fetchImpl: async (_url, config) => {
     options = JSON.parse(config.body);
     return Response.json({ content: [{ type: 'text', text: 'En riktig testrespons' }], usage: { input_tokens: 80, output_tokens: 20 } });
   } }); t.after(() => f.close());
   assert.equal((await f.call('/chat', { message: 'Hej' })).data.content, 'En riktig testrespons');
   assert.equal(options.model, 'claude-sonnet-4-20250514');
   assert.ok(options.system.includes('inga verktyg'));
-  const broken = await fixture({ env: { OPENAI_API_KEY: 'test-only' }, fetchImpl: async () => { throw new Error('Network'); } }); t.after(() => broken.close());
+  const broken = await fixture({ allowAI: true, env: { OPENAI_API_KEY: 'test-only' }, fetchImpl: async () => { throw new Error('Network'); } }); t.after(() => broken.close());
   assert.equal((await broken.call('/chat', { message: 'Hej' })).status, 502);
   const state = (await broken.call('/state')).data;
   assert.equal(state.messages.length, 0);
   assert.equal(state.usage[0].estimated, true);
   assert.ok(state.ai.spent > 0);
+});
+
+test('Fas 1 spärrar AI på servern även med nyckel och manipulerad begäran', async t => {
+ let calls=0;
+ const f=await fixture({env:{OPENAI_API_KEY:'test-only',GARON_AI_ENABLED:'true'},fetchImpl:async()=>{calls++;throw new Error('Must never call');}});
+ t.after(()=>f.close());
+ const before=(await f.call('/state')).data;
+ assert.equal(before.ai.configured,true);
+ assert.equal(before.ai.enabled,false);
+ const response=await f.call('/chat',{message:'Skicka inte',allowAI:true,enabled:true});
+ assert.equal(response.status,403);
+ assert.match(response.data.error,/Fas 1/);
+ const after=(await f.call('/state')).data;
+ assert.equal(calls,0);
+ assert.deepEqual(after.messages,before.messages);
+ assert.deepEqual(after.usage,before.usage);
+ assert.deepEqual(after.activity,before.activity);
+});
+
+test('Fas 1 läser tidigare databasformat utan att skriva om poster eller schema', async t => {
+ const {DatabaseSync}=await import('node:sqlite');
+ const dir=mkdtempSync(join(tmpdir(),'garon-legacy-'));
+ const database=join(dir,'old.sqlite');
+ const legacy=new DatabaseSync(database);
+ legacy.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);`);
+ legacy.prepare('INSERT INTO settings VALUES (1,?)').run(JSON.stringify({name:'Dahir',budget:7}));
+ const rows=[
+ ['task',{id:'t1',title:'Bevarat uppdrag',description:'Original',status:'approval',priority:'high',agentId:'a1',createdAt:'2026-10-17T10:00:00Z',updatedAt:'2026-10-17T10:00:00Z'}],
+ ['agent',{id:'a1',name:'Research',role:'Analys',enabled:true,createdAt:'2026-10-17T10:00:00Z'}],
+ ['note',{id:'n1',title:'Gammalt minne',content:'Ska bevaras',createdAt:'2026-10-17T10:00:00Z'}],
+ ['message',{id:'m1',role:'assistant',content:'Tidigare svar',createdAt:'2026-10-17T10:00:00Z'}],
+ ['usage',{id:'u1',model:'gpt-4.1-mini',cost:0.01,estimated:false,inputTokens:20,outputTokens:10,createdAt:'2026-10-17T10:00:00Z'}],
+ ['activity',{id:'e1',title:'Tidigare aktivitet',detail:'Bevaras',type:'info',createdAt:'2026-10-17T10:00:00Z'}]
+ ];
+ for(const [kind,row] of rows)legacy.prepare('INSERT INTO entities VALUES (?,?,?)').run(row.id,kind,JSON.stringify(row));
+ const snapshot=legacy.prepare('SELECT * FROM entities ORDER BY id').all();
+ const schema=legacy.prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").all();
+ legacy.close();
+ const f=await fixture({database});
+ try{
+  const state=(await f.call('/state')).data;
+  assert.equal(state.tasks[0].id,'t1');
+  assert.equal(state.tasks[0].status,'approval');
+  assert.equal(state.messages[0].content,'Tidigare svar');
+  assert.equal(state.settings.budget,7);
+  const exported=(await f.call('/export')).data;
+  assert.equal(exported.notes[0].content,'Ska bevaras');
+  assert.equal(exported.agents[0].id,'a1');
+ }finally{await f.close();}
+ const check=new DatabaseSync(database,{readOnly:true});
+ assert.deepEqual(check.prepare('SELECT * FROM entities ORDER BY id').all(),snapshot);
+ assert.deepEqual(check.prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").all(),schema);
+ check.close();
+ rmSync(dir,{recursive:true,force:true});
 });

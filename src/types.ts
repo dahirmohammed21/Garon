@@ -1,9 +1,79 @@
-export type TaskStatus = 'pending' | 'running' | 'done' | 'cancelled' | 'approval';
-export type Task = { id: string; title: string; description: string; priority: 'low' | 'normal' | 'high'; status: TaskStatus; agentId: string | null; createdAt: string; updatedAt: string };
-export type Agent = { id: string; name: string; role: string; enabled: boolean; createdAt: string };
-export type Note = { id: string; title: string; content: string; createdAt: string };
-export type Activity = { id: string; title: string; detail: string; type: 'info' | 'success' | 'warning'; createdAt: string };
-export type Message = { id: string; role: 'user' | 'assistant'; content: string; createdAt: string };
-export type Usage = { id: string; createdAt: string; model: string; cost: number; estimated: boolean; inputTokens: number; outputTokens: number };
-export type State = { tasks: Task[]; agents: Agent[]; notes: Note[]; activity: Activity[]; messages: Message[]; usage: Usage[]; settings: { name: string; budget: number }; ai: { configured: boolean; provider: string | null; model: string | null; pricingSupported: boolean; spent: number; busy: boolean } };
-export type Page = 'overview' | 'agents' | 'tasks' | 'activity' | 'approvals' | 'finance' | 'chat' | 'memory' | 'settings';
+export type TaskStatus =
+  "pending" | "running" | "done" | "cancelled" | "approval";
+export type Task = {
+  id: string;
+  title: string;
+  description: string;
+  priority: "low" | "normal" | "high";
+  status: TaskStatus;
+  agentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type Agent = {
+  id: string;
+  name: string;
+  role: string;
+  enabled: boolean;
+  createdAt: string;
+};
+export type Note = {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+};
+export type Activity = {
+  id: string;
+  title: string;
+  detail: string;
+  type: "info" | "success" | "warning";
+  createdAt: string;
+};
+export type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+};
+export type Usage = {
+  id: string;
+  createdAt: string;
+  model: string;
+  cost: number;
+  estimated: boolean;
+  inputTokens: number;
+  outputTokens: number;
+};
+export type State = {
+  tasks: Task[];
+  agents: Agent[];
+  notes: Note[];
+  activity: Activity[];
+  messages: Message[];
+  usage: Usage[];
+  settings: { name: string; budget: number };
+  ai: {
+    enabled: boolean;
+    configured: boolean;
+    provider: string | null;
+    model: string | null;
+    pricingSupported: boolean;
+    spent: number;
+    busy: boolean;
+  };
+};
+export type Page =
+  | "overview"
+  | "businesses"
+  | "projects"
+  | "leadership"
+  | "integrations"
+  | "agents"
+  | "tasks"
+  | "activity"
+  | "approvals"
+  | "finance"
+  | "chat"
+  | "memory"
+  | "settings";
