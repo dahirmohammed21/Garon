@@ -8,6 +8,7 @@ import { register as registerTasks } from "./modules/tasks.js";
 import { register as registerAgents } from "./modules/agents.js";
 import { register as registerMemory } from "./modules/memory.js";
 import { register as registerSettings } from "./modules/settings.js";
+import { register as registerBusinesses } from "./modules/businesses.js";
 
 // Runtime AI is disabled by default, independently of credentials or frontend controls.
 // allowAI is an internal test seam, never sourced from environment or request data.
@@ -27,6 +28,7 @@ export function createApp({
   );
   app.get("/api/state", (_req, res) =>
     res.json({
+      businesses: all("business"),
       tasks: all("task"),
       agents: all("agent"),
       notes: all("note"),
@@ -41,6 +43,7 @@ export function createApp({
   registerAgents(app, store);
   registerMemory(app, store);
   registerSettings(app, store);
+  registerBusinesses(app, store);
   app.get("/api/export", (_req, res) => {
     res.setHeader(
       "Content-Disposition",
@@ -48,6 +51,7 @@ export function createApp({
     );
     res.json({
       exportedAt: now(),
+      businesses: all("business"),
       tasks: all("task"),
       agents: all("agent"),
       notes: all("note"),
@@ -65,11 +69,9 @@ export function createApp({
     res.sendFile(resolve("dist/index.html"), (error) => error && next(error)),
   );
   app.use((error, _req, res, _next) =>
-    res
-      .status(error.status || 500)
-      .json({
-        error: error.status ? error.message : "Ett oväntat serverfel uppstod.",
-      }),
+    res.status(error.status || 500).json({
+      error: error.status ? error.message : "Ett oväntat serverfel uppstod.",
+    }),
   );
   return { app, close: store.close };
 }

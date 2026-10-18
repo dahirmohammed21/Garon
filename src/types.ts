@@ -46,6 +46,7 @@ export type Usage = {
   outputTokens: number;
 };
 export type State = {
+  businesses: Business[];
   tasks: Task[];
   agents: Agent[];
   notes: Note[];
@@ -54,6 +55,12 @@ export type State = {
   usage: Usage[];
   settings: { name: string; budget: number };
   ai: {
+    providers: {
+      id: string;
+      name: string;
+      configured: boolean;
+      model: string;
+    }[];
     enabled: boolean;
     configured: boolean;
     provider: string | null;
@@ -62,6 +69,15 @@ export type State = {
     spent: number;
     busy: boolean;
   };
+};
+export type BusinessSection = { id: string; title: string; view: string };
+export type Business = {
+  id: string;
+  name: string;
+  description: string;
+  sections: BusinessSection[];
+  createdAt: string;
+  updatedAt: string;
 };
 export type Page =
   | "overview"

@@ -1,67 +1,76 @@
-# GARON 2.0 · Fas 1
+# GARON 3.0
 
-GARON är Dahirs privata digitala huvudkontor och framtida AI-drivna affärspartner. Den här versionen genomför **Fas 1: omstrukturering och design** på den befintliga GARON-grunden.
+En privat och enkel arbetsmiljö för ditt och GARONs gemensamma huvudkontor. Chatten är centrum. Verksamheter och funktioner läggs till när du behöver dem.
 
-![GARONs huvudkontor i Fas 1](docs/images/headquarters.png)
+![GARON 3.0 – mörk översikt](docs/images/garon3-home.png)
 
-[Visa organisationsöversikten](docs/images/organization.png). Bilderna visar gränssnittet, inte en interaktiv förhandsvisning. AI-ledningen är uttryckligen planerad och inaktiv.
+[Verksamheternas nätverksvy](docs/images/garon3-network.png) · [Ljust tema och utseendeinställningar](docs/images/garon3-settings.png) · [Mobilvy](docs/images/garon3-mobile.png)
 
-## Starta på din Mac
+Bilderna är skärmbilder av den fungerande appen, inte interaktiva förhandsvisningar. Inga exempelverksamheter har lagts in.
 
-Installera **Node.js 24 eller senare**. Öppna en terminal i projektmappen och kör:
+## Öppna på din Mac
+
+1. Hämta ZIP-filen från grenen **garon-v1**, eller uppdatera din befintliga Git-checkout.
+2. Stoppa eventuell äldre GARON-server med **Ctrl+C** i dess terminal. Behåll gamla mappar och data tills du har en säkerhetskopia.
+3. Installera **Node.js 24 eller senare** om det saknas.
+4. Öppna Terminal i projektmappen och kör:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Öppna adressen som Vite visar i terminalen, normalt port 5173. API:t kör på port 3001. Ingen API-nyckel behövs.
+Öppna den lokala adress som Vite visar i terminalen, normalt port **5173**. Låt terminalen vara öppen medan du använder appen. Ingen API-nyckel behövs.
 
-För den byggda appen:
+För att köra det färdiga bygget:
 
 ```sh
 npm run build
 npm start
 ```
 
-Den byggda appen och API:t använder då port 3001. API-servern lyssnar lokalt på `127.0.0.1` som standard. Vites utvecklingsserver lyssnar på nätverksgränssnitten för den privata utvecklingsmiljön. Appen saknar autentisering: använd den privat och exponera den inte på internet.
+Appen och API:t serveras då tillsammans på port **3001**. Alla kommandon körs i projektets rot. API-servern använder `127.0.0.1` som standard; `HOST`, `PORT` och `GARON_DB` kan anges i en privat `.env`-fil. Vites utvecklingsserver är åtkomlig via nätverksgränssnitten för den privata utvecklingsmiljön. Kör inte flera API-processer mot samma databas.
 
-## Vad som är implementerat
+## Det som fungerar
 
-- Navigation i grupperna Huvudkontor, Organisation och System.
-- Översikt med personlig hälsning, verkliga väntande beslut, prioriterade uppdrag, lokal AI-budget och aktivitet sedan senaste besöket i samma webbläsare.
-- Befintlig uppdragshantering under **Projekt → Fristående uppdrag**: skapa, söka, redigera, prioritera, slutföra och radera uppdrag.
-- Manuella godkännanden för uppdragsplanering.
-- Skapa och pausa agentrollskonfigurationer, utan faktisk agentkörning.
-- Globalt minne med sparade anteckningar, aktivitetslogg, sökning och JSON-export.
-- Samtalsvy med strategisk och operativ inriktning, exempel på frågor och bevarad tidigare chatthistorik.
-- Beständig lokal SQLite-databas och kostnadshistorik.
-- En teknisk serverkontroll som nekar AI-anrop i Fas 1, även om en API-nyckel finns.
+- **Huvudkontor:** Översikt med GARON-chatten, riktiga väntande godkännanden, tydligt frånkopplad inkorg och verklig senaste aktivitet.
+- **Navigation:** döljbar sidopanel, expanderbara sektioner och verksamhetsmappar. Inställningar ligger separat längst ned. Layouten fungerar på mobil och desktop.
+- **Verksamheter:** skapa med namn och valfri beskrivning, öppna, redigera, byta namn och ta bort efter bekräftelse. Verksamheterna sparas lokalt i SQLite och finns kvar efter omladdning och serveromstart. Det finns inga förvalda verksamheter.
+- **Organisation:** nätverksvy med GARON Core och verkligt skapade verksamheter, samt listvy. Verksamhetsnoder öppnar respektive arbetsyta. Zoomning, panorering och återställning fungerar.
+- **Anpassningsbara mappar:** en ny verksamhet får endast Översikt. Via Redigera kan du välja att visa förberedda sidor för Uppdrag och Agenter. Menyerna lagras per verksamhet som metadata och är inte en global, oföränderlig mall.
+- **Utseende:** mörkt/ljust tema, blå/lila/grön/orange accent, egen färgväljare samt normal/kompakt sidopanel. Färgerna används centralt i hela gränssnittet. Inställningarna finns kvar efter omladdning och omstart av webbläsaren.
+- **Manuella anteckningar:** skapa, läsa, redigera och ta bort egna anteckningar under Inställningar → Minne. De är tydligt skilda från ett framtida automatiskt AI-minne.
+- **Allmänt:** svenska som gränssnittsspråk, fungerande val för bekräftelsemeddelanden i appen, information om lokal säkerhet och JSON-export av sparade data. Fel visas även om bekräftelser är avstängda.
+- **Bevarade data:** tidigare uppdrag, agentroller, anteckningar, chatthistorik, godkännanden, aktivitet, budget och registrerad användning finns kvar. Äldre backendfunktioner och leverantörsadaptrar är bevarade, även när de inte visas i den nya huvudnavigationen.
 
-## Vad som är demonstration eller planerat
+## Förberett för framtiden
 
-- **Verksamheter och projekt:** vyer och struktur finns. SITELY och E-handel visas endast när design-demo är påslaget och märks som demo. De är inte sparade verksamheter. Skapande, redigering och lagring kommer i Fas 2.
-- **AI-ledning:** organisationsbilden visar den planerade strukturen Dahir → GARON → OpenAI-chef / Claude-chef → specialiserade agenter. Cheferna kör inte, har inga verktyg och ingen egen aktiv körbudget. Befintliga agentroller kopplas inte automatiskt till dem.
-- **Min affärspartner:** riktiga AI-svar är spärrade. Ett uttryckligen märkt demosvar kan visas. Utkastet finns bara i den öppna sessionen och sparas inte vid omladdning. Ingen instruktion utförs.
-- **Rekommendationer:** översiktens vägledning bygger på fasta regler, inte AI-analys. Ingen automatisk affärsresearch eller riskbedömning görs.
-- **Rapporter:** den verkliga aktivitetsloggen fungerar. AI-genererade rapporter kommer senare.
-- **Integrationer och autonomi:** endast informationsvyer. Inga konton ansluts, utskick görs, avtal ingås eller betalningar genomförs.
+- **AI:** chatten visar historik och låter dig skriva ett utkast, men Skicka är inaktiverat. Riktiga AI-anrop är spärrade på servern, även om en nyckel finns. Inga falska svar visas. Ett utkast försvinner vid omladdning.
+- **AI-modeller:** separata serveradaptrar för OpenAI och Anthropic finns. Inställningarna visar endast om respektive servernyckel är konfigurerad. Det är inte en verifierad eller aktiverad anslutning. Fler leverantörer kan läggas till senare.
+- **AI-minne:** automatiskt minne är inte aktiverat. Anteckningar skickas inte automatiskt till någon modell. Det finns ingen knapp som låtsas slå på ett fungerande minnessystem.
+- **Inkorg och plugins:** inga e-postkonton, kalendrar, dokumenttjänster eller affärssystem är anslutna. Kategorierna är en framtida struktur, inte installations- eller anslutningsknappar.
+- **Schemalagt:** ingen körmotor eller bakgrundsautomatisering är aktiverad.
+- **Verksamhetsuppdrag och agenter:** eventuella extra menysidor är tydligt förberedda. Äldre uppdrag flyttas inte automatiskt till en verksamhet och inga agenter skapas eller aktiveras.
+- **Godkännanden:** verkliga tidigare ärenden kan godkännas eller avslås för manuell uppdragsplanering. Detta startar inga externa åtgärder, agentkörningar, betalningar eller utskick.
 
-Fas 1 aktiverar ingen AI och gör inga betalda anrop. Nycklar i befintlig `.env` lämnas orörda och används inte för chatt. Framtida aktivering kräver ett separat godkännande i Fas 3. OpenAI och Anthropic har separata förberedda adaptrar. De automatiserade adaptertesterna använder uteslutande simulerade svar.
+AI-aktivering och betalda anrop kräver ett separat godkännande. API-nycklar ska endast finnas på serversidan; lägg dem aldrig i frontend, localStorage, dokumentation eller Git.
 
-## Data och säker övergång
+## Var lagras informationen?
 
-SQLite-filen ligger fortfarande i `.garon/garon.sqlite`. Databasens schema och befintliga postformat är oförändrade. Uppdrag, agentroller, anteckningar, chatthistorik, aktivitet, budget och kostnadshistorik behålls med samma identiteter. Inga demoposter skrivs till databasen.
+| Information | Lagring |
+| --- | --- |
+| Verksamheter, menystruktur, anteckningar och tidigare arbetsdata | `.garon/garon.sqlite` |
+| Tema, accentfärg, täthet och bekräftelsemeddelanden | `garon.v3.preferences` i webbläsarens localStorage |
+| Panelens öppet/stängt-läge, expanderade mappar och visningsläge | Separata `garon.v3.*`-nycklar i localStorage |
+| Eventuella API-nycklar | Serverns miljö eller ignorerad `.env` |
 
-Inga gamla uppdrag tilldelas en verksamhet eller ett projekt automatiskt. De ligger kvar som fristående uppdrag. Inga gamla anteckningar omklassificeras automatiskt som verifierade fakta.
+Webbläsarinställningar gäller den aktuella webbläsarprofilen och adressen. En annan port, privat fönster eller annan webbläsare har egna inställningar. Verksamheterna finns fortfarande i databasen, oberoende av webbläsarprofilen.
 
-Data är lokala och okrypterade. Exportknappen i Inställningar skapar en JSON-fil som även innehåller chatthistorik; hantera den som privat information. Import är inte implementerad. För en fullständig databaskopia, stoppa servern och kopiera hela `.garon/` eller använd SQLite backup-API. Nycklar ska aldrig checkas in i Git. `.env` och `.garon/` är ignorerade.
+Ingen raderande datamigrering behövs. Verksamheter använder en ny posttyp i den befintliga SQLite-tabellen. Gamla poster ändras inte automatiskt. Borttagning av en verksamhet tar endast bort dess metadata, inte tidigare uppdrag eller anteckningar.
 
-Inför Fas 2 krävs en separat, testad migrationsplan. Se [arkitektur och migrationsplan](docs/phase-1.md).
+**Säkerhetskopiera innan du flyttar mellan mappar:** stoppa servern och kopiera hela `.garon/`, eller använd SQLite backup-API. Exportknappen ger en JSON-kopia för granskning och säkerhetskopiering, men JSON-import är inte implementerad. Databasen är okrypterad. `.garon/` och `.env` är ignorerade av Git.
 
-## Budget
-
-Befintlig månadsbudget och kostnadshistorik är bevarade. Budgeten gäller en kalendermånad i UTC och bara den här installationen. Kostnaderna beräknas från tokenanvändning och modellpris; de är inte fakturor. Osäkra anrop kan ha kvar en reservation. Sätt även en gräns hos leverantören vid framtida aktivering. Kör bara en serverprocess per databas.
+Appen saknar inloggning och ska användas privat. Publik internetåtkomst kräver ett separat skydd. Utvecklingsmiljöns databas är inte en säkerhetskopia av data som finns separat på din Mac.
 
 ## Testa
 
@@ -71,27 +80,25 @@ npm run build
 npm run test:e2e
 ```
 
-API-tester använder isolerade databaser och inga riktiga leverantörsanrop. De verifierar befintliga funktioner, tidigare databasformat, AI-spärren och de bevarade adapter- och budgetfunktionerna med simulerade svar.
+- **10 API-tester**: bevarade arbetsflöden och gamla databasformat, serverbaserad AI-spärr, verksamhetsvalidering och CRUD, lagring efter serveromstart, anteckningsredigering och säker leverantörsmetadata. Adaptertesterna använder enbart simulerade leverantörssvar, inga riktiga betalda anrop.
+- **4 webbläsartester**: tom start, verksamhetsmappar och nätverk, bekräftad borttagning, mörkt/ljust tema, samtliga accentval och egen färg, sparad täthet, manuella anteckningar och inställningar, samt samtliga huvudsidor vid 320, 390, 768 och 1440 pixlar i båda teman.
 
-Webbläsartester använder en separat tillfällig databas och går igenom uppdrag, beslut, minne, agentroller, ny navigation, demo, inaktiv AI samt alla vyer vid mobil- och desktopbredder. De använder Chromium på `/usr/bin/chromium`. På en annan dator anger du miljövariabeln `CHROMIUM_PATH` till din Chrome- eller Chromium-binär. Att köra appen kräver inte Chromium eller Playwright.
+Webbläsartesterna använder en separat tillfällig databas. Chromium förväntas på `/usr/bin/chromium` i molnmiljön. På en annan dator anger du `CHROMIUM_PATH` till en Chrome- eller Chromium-binär. Den vanliga appen kräver inte Chromium eller Playwright.
 
-## Kodstruktur
+## Struktur
 
 ```text
 src/
-  components/              Sidopanel, dialoger och gemensamma panelkomponenter
-  features/
-    headquarters/          Huvudkontorsöversikt
-    organization/          Planerad AI-ledning
-    partner/               GARON – Min affärspartner
-    workspace/             Uppdrag, minne, kostnader och planerade vyer
-  lib/                     Navigation, API-klient, format och delat gränssnittstillstånd
+  App.tsx                 Applikationens tillstånd, routing och laddning
+  features/v3/            Nya sidor, chatt, sidopanel, dialoger och nätverksvy
+  lib/v3/                 Central navigation, temasystem och gemensamt tillstånd
+  garon3.css              Nya designsystemet med centrala CSS-variabler
 server/
-  core/                    Förberedd chatt och gemensam validering
-  modules/                 Befintliga API-funktioner uppdelade per område
-  providers/               Separata OpenAI- och Anthropic-adaptrar
-  policies/                HTTP-skydd
-  storage/                 Oförändrad SQLite-lagring
+  core/                   Bevarad chatt, validering och AI-spärr
+  modules/                Verksamheter och tidigare API-funktioner
+  providers/              Separata OpenAI- och Anthropic-adaptrar
+  policies/               HTTP-skydd
+  storage/                Befintlig SQLite-lagring
 ```
 
-Teckensnitt paketeras lokalt. Gränssnittet behöver inga externa CDN:er. Varje senare fas godkänns och verifieras separat.
+Tidigare komponenter och vyer finns kvar i källkoden men ingår inte i GARON 3.0:s navigation. Historiska anteckningar om Fas 1 beskriver den tidigare versionen. Se [tekniska anteckningar för GARON 3.0](docs/garon3.md) för aktuell struktur och avgränsning.

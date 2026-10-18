@@ -11,6 +11,18 @@ export function register(app, store) {
     activity("Minne sparat", note.title, "success");
     res.status(201).json(note);
   });
+  app.patch("/api/notes/:id", (req, res) => {
+    const note = get("note", req.params.id);
+    const updated = {
+      ...note,
+      title: text(req.body.title, "Rubrik", 160),
+      content: text(req.body.content, "Anteckning", 10000),
+      updatedAt: now(),
+    };
+    put("note", updated);
+    activity("Anteckning uppdaterad", updated.title);
+    res.json(updated);
+  });
   app.delete("/api/notes/:id", (req, res) => {
     const note = get("note", req.params.id);
     remove(note.id);

@@ -27,7 +27,7 @@ export function registerChat(app, store, { env, fetchImpl, allowAI = false }) {
   app.post("/api/chat", async (req, res) => {
     if (!allowAI)
       fail(
-        "AI-anrop är spärrade i Fas 1. Aktivering kräver ett separat godkännande i Fas 3.",
+        "AI-anrop är spärrade i den här versionen. Aktivering kräver ett separat godkännande.",
         403,
       );
     const message = text(req.body.message, "Meddelandet", 6000);
@@ -115,6 +115,20 @@ export function registerChat(app, store, { env, fetchImpl, allowAI = false }) {
   return {
     state: () => ({
       enabled: allowAI,
+      providers: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          configured: Boolean(env.OPENAI_API_KEY),
+          model: env.OPENAI_MODEL || "gpt-4.1-mini",
+        },
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          configured: Boolean(env.ANTHROPIC_API_KEY),
+          model: env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
+        },
+      ],
       provider,
       model: provider ? model : null,
       configured: Boolean(provider),

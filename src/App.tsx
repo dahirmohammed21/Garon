@@ -1,496 +1,313 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowUpRight,
-  Bell,
-  CheckCheck,
   ChevronRight,
   LoaderCircle,
   Menu,
-  MessageSquare,
-  Plus,
-  Search,
+  PanelLeftOpen,
   ShieldCheck,
+  Sparkles,
   X,
 } from "lucide-react";
-import type { Page, State, Task } from "./types";
-import { pages } from "./lib/navigation";
-import { WorkspaceProvider } from "./lib/workspace";
+import type { Business, State } from "./types";
 import { request } from "./lib/api";
-import Sidebar from "./components/Sidebar";
-import WorkspaceDialog from "./components/WorkspaceDialog";
-import HeadquartersPage from "./features/headquarters/HeadquartersPage";
+import { useTheme } from "./lib/v3/theme";
+import { GaronProvider } from "./lib/v3/garon";
 import {
-  BusinessesPage,
-  ProjectsPage,
-  IntegrationsPage,
-} from "./features/workspace/PlannedPages";
-import LeadershipPage from "./features/organization/LeadershipPage";
-import TasksPage from "./features/workspace/TasksPage";
-import AgentsPage from "./features/workspace/AgentsPage";
-import ActivityPage from "./features/workspace/ActivityPage";
-import ApprovalsPage from "./features/workspace/ApprovalsPage";
-import FinancePage from "./features/workspace/FinancePage";
-import MemoryPage from "./features/workspace/MemoryPage";
-import PartnerPage from "./features/partner/PartnerPage";
-import SettingsPage from "./features/workspace/SettingsPage";
-
+  headquarters,
+  readRoute,
+  routeHash,
+  type Route,
+} from "./lib/v3/navigation";
+import Sidebar from "./features/v3/Sidebar";
+import Home from "./features/v3/Home";
+import Businesses, { BusinessDetail } from "./features/v3/Businesses";
+import BusinessDialog from "./features/v3/BusinessDialog";
+import SettingsPage from "./features/v3/SettingsPage";
+import {
+  ActivityPage,
+  Approvals,
+  InboxPage,
+  Scheduled,
+} from "./features/v3/Pages";
+function errorMessage(error: unknown) {
+  return error instanceof TypeError
+    ? "Kunde inte nå servern. Kontrollera att GARON är igång."
+    : error instanceof Error
+      ? error.message
+      : "Något gick fel. Försök igen.";
+}
+function rememberedSidebar() {
+  try {
+    return localStorage.getItem("garon.v3.sidebar") === "closed";
+  } catch {
+    return false;
+  }
+}
 export default function App() {
-  const [lastVisit] = useState(() => localStorage.getItem("garon.lastVisit"));
-  useEffect(() => {
-    localStorage.setItem("garon.lastVisit", new Date().toISOString());
-  }, []);
+  const { preferences, storageError } = useTheme();
   const [state, setState] = useState<State | null>(null);
-  const [page, setPage] = useState<Page>(() => {
-    const key = location.hash.slice(1);
-    return pages.some((item) => item.id === key) ? (key as Page) : "overview";
-  });
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem("garon.sidebar") === "closed",
-  );
+  const [route, setRoute] = useState<Route>(readRoute);
+  const [collapsed, setCollapsed] = useState(rememberedSidebar);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [isMobile, setIsMobile] = useState(() => innerWidth < 900);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
-  const [modal, setModal] = useState<"task" | "agent" | "note" | Task | null>(
+  const busyRef = useRef(false);
+  const [businessDialog, setBusinessDialog] = useState<Business | "new" | null>(
     null,
   );
-  const [notifications, setNotifications] = useState(false);
-  const [demo, setDemo] = useState(false);
-  const [taskFilter, setTaskFilter] = useState("all");
-  const [listQuery, setListQuery] = useState("");
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const chatEnd = useRef<HTMLDivElement>(null);
-  const modalRef = useRef<HTMLDivElement>(null);
-  async function load() {
+  const load = useCallback(async () => {
     const response = await fetch("/api/state");
-    if (!response.ok) throw new Error("Kunde inte läsa data från GARON.");
+    if (!response.ok)
+      throw new Error("Kunde inte läsa dina sparade uppgifter.");
     const data = await response.json();
     setState(data);
     setError("");
-  }
-  useEffect(() => {
-    load().catch((e) => setError(e.message));
-    const timer = setInterval(() => {
-      load().catch((e) => setError(e.message));
-    }, 15000);
-    return () => clearInterval(timer);
   }, []);
   useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(""), 4500);
-      return () => clearTimeout(timer);
-    }
+    void load().catch((error) => setError(errorMessage(error)));
+    const timer = setInterval(
+      () => void load().catch((error) => setError(errorMessage(error))),
+      15000,
+    );
+    return () => clearInterval(timer);
+  }, [load]);
+  useEffect(() => {
+    const handler = () => {
+      setRoute(readRoute());
+      setMobileOpen(false);
+    };
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
+  useEffect(() => {
+    const media = matchMedia("(max-width:899px)");
+    const handler = () => {
+      setIsMobile(media.matches);
+      setMobileOpen(false);
+    };
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 5500);
+    return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
-    const listener = () => {
-      const key = location.hash.slice(1);
-      if (pages.some((item) => item.id === key)) {
-        setPage(key as Page);
-        setListQuery("");
-      }
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
     };
-    window.addEventListener("hashchange", listener);
-    return () => window.removeEventListener("hashchange", listener);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
-  useEffect(() => {
-    const listener = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (event.key === "Escape") {
-        setModal(null);
-        setNotifications(false);
-        setQuery("");
-        setMobileOpen(false);
-      }
-    };
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  }, []);
-  useEffect(() => {
-    chatEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [state?.messages.length, sending, page]);
-  useEffect(() => {
-    if (!modal) return;
-    const previous = document.activeElement as HTMLElement;
-    const root = modalRef.current;
-    root?.querySelector<HTMLElement>("input, button")?.focus();
-    const trap = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || !root) return;
-      const elements = [
-        ...root.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), input, textarea, select, a[href]",
-        ),
-      ];
-      const first = elements[0],
-        last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener("keydown", trap);
-    return () => {
-      document.removeEventListener("keydown", trap);
-      previous?.focus();
-    };
-  }, [modal]);
-  function go(next: Page) {
-    setPage(next);
-    location.hash = next;
+  function go(next: Route) {
+    setRoute(next);
+    location.hash = routeHash(next);
     setMobileOpen(false);
-    setQuery("");
-    setListQuery("");
-    setNotifications(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
-  function toggleSidebar() {
-    if (window.innerWidth < 900) setMobileOpen((value) => !value);
+  function toggle() {
+    if (isMobile) setMobileOpen((value) => !value);
     else
       setCollapsed((value) => {
-        localStorage.setItem("garon.sidebar", value ? "open" : "closed");
+        try {
+          localStorage.setItem("garon.v3.sidebar", value ? "open" : "closed");
+        } catch {}
         return !value;
       });
   }
   async function mutate(
     path: string,
-    body?: unknown,
+    body: unknown,
     method = "POST",
     message = "Ändringen är sparad",
   ) {
-    if (busy) return;
+    if (busyRef.current) return false;
+    busyRef.current = true;
     setBusy(true);
     try {
       await request(path, body, method);
       await load();
-      setModal(null);
-      setToast(message);
+      if (preferences.confirmations && message) setToast(message);
       return true;
-    } catch (e) {
-      setToast((e as Error).message);
+    } catch (error) {
+      setToast(errorMessage(error));
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
-  async function sendChat(event: FormEvent) {
-    event.preventDefault();
-    if (!draft.trim() || sending || !state?.ai.enabled) return;
-    setSending(true);
-    try {
-      await request("/chat", { message: draft });
-      setDraft("");
-      await load();
-    } catch (e) {
-      setToast((e as Error).message);
-      await load().catch(() => {});
-    } finally {
-      setSending(false);
+  function newBusiness() {
+    setMobileOpen(false);
+    setBusinessDialog("new");
+  }
+  function editBusiness(business: Business) {
+    setMobileOpen(false);
+    setBusinessDialog(business);
+  }
+  async function deleteBusiness(business: Business) {
+    if (
+      !confirm(
+        `Ta bort verksamheten ”${business.name}”?\n\nVerksamhetens namn, beskrivning och meny tas bort. Tidigare uppdrag, anteckningar och historik påverkas inte.`,
+      )
+    )
+      return;
+    if (
+      await mutate(
+        `/businesses/${business.id}`,
+        { confirm: true },
+        "DELETE",
+        "Verksamheten är borttagen",
+      )
+    ) {
+      if (route.businessId === business.id) go({ page: "businesses" });
     }
   }
+  const currentBusiness = state?.businesses.find(
+    (business) => business.id === route.businessId,
+  );
+  const title =
+    route.page === "home"
+      ? "Ditt huvudkontor"
+      : route.page === "business"
+        ? currentBusiness?.name || "Verksamhet"
+        : route.page === "businesses"
+          ? "Verksamheter"
+          : route.page === "settings"
+            ? "Inställningar"
+            : headquarters.find((item) => item.page === route.page)?.title ||
+              "GARON";
+  useEffect(() => {
+    document.title = `${title} · GARON`;
+  }, [title]);
   if (!state)
     return (
-      <main className="boot">
-        <div className="brand-orb" />
-        <h1>GARON</h1>
-        <p>{error || "Ansluter till din kontrollcentral…"}</p>
+      <div className="app-loading">
+        <span className="garon-mark">
+          <Sparkles size={24} />
+        </span>
+        <strong>GARON</strong>
+        <p>{error || "Öppnar din arbetsyta…"}</p>
         {error ? (
           <button
             className="button"
-            onClick={() => load().catch((e) => setError(e.message))}
+            onClick={() =>
+              void load().catch((error) => setError(errorMessage(error)))
+            }
           >
             Försök igen
           </button>
         ) : (
-          <LoaderCircle className="spin" />
+          <LoaderCircle size={20} className="spin" />
         )}
-      </main>
+      </div>
     );
-
-  const approvals = state.tasks.filter((task) => task.status === "approval");
-  const matches = (value: string, q = listQuery) =>
-    value.toLocaleLowerCase("sv").includes(q.toLocaleLowerCase("sv"));
-  const searchResults = query.trim()
-    ? [
-        ...state.tasks
-          .filter((task) => matches(`${task.title} ${task.description}`, query))
-          .map((task) => ({
-            id: task.id,
-            title: task.title,
-            type: "Uppdrag",
-            page: "tasks" as Page,
-            task,
-          })),
-        ...state.agents
-          .filter((agent) => matches(`${agent.name} ${agent.role}`, query))
-          .map((agent) => ({
-            id: agent.id,
-            title: agent.name,
-            type: "Agent",
-            page: "agents" as Page,
-            task: null,
-          })),
-        ...state.notes
-          .filter((note) => matches(`${note.title} ${note.content}`, query))
-          .map((note) => ({
-            id: note.id,
-            title: note.title,
-            type: "Minne",
-            page: "memory" as Page,
-            task: null,
-          })),
-      ].slice(0, 7)
-    : [];
-  const pageInfo = pages.find((item) => item.id === page)!;
-
-  const workspace = {
-    state,
-    page,
-    collapsed,
-    mobileOpen,
-    toggleSidebar,
-    go,
-    busy,
-    mutate,
-    modal,
-    setModal,
-    modalRef,
-    listQuery,
-    setListQuery,
-    taskFilter,
-    setTaskFilter,
-    draft,
-    setDraft,
-    sending,
-    sendChat,
-    chatEnd,
-    demo,
-    setDemo,
-    lastVisit,
-  };
+  const hidden = isMobile ? !mobileOpen : collapsed;
   return (
-    <WorkspaceProvider value={workspace}>
+    <GaronProvider
+      value={{
+        state,
+        route,
+        go,
+        busy,
+        mutate,
+        newBusiness,
+        editBusiness,
+        deleteBusiness,
+      }}
+    >
       <div
-        className={`app-shell ${collapsed ? "sidebar-collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
+        className={`g-shell ${collapsed ? "sidebar-hidden" : ""} ${mobileOpen ? "mobile-open" : ""}`}
       >
+        <div className="sidebar-holder" aria-hidden={hidden} inert={hidden}>
+          <Sidebar toggle={toggle} />
+        </div>
         {mobileOpen && (
           <button
-            className="mobile-backdrop"
+            className="sidebar-overlay"
             aria-label="Stäng navigation"
             onClick={() => setMobileOpen(false)}
           />
         )}
-        <Sidebar />
-
-        <div className="main-shell">
-          <header className="topbar">
+        <div className="g-main" inert={mobileOpen}>
+          <header className="g-topbar">
             <button
-              className="icon-button open-sidebar"
-              onClick={toggleSidebar}
+              className="icon-button open-navigation"
+              onClick={toggle}
               aria-label="Öppna navigation"
             >
-              <Menu size={20} />
+              {isMobile ? <Menu size={19} /> : <PanelLeftOpen size={19} />}
             </button>
-            <div className="global-search">
-              <Search size={16} />
-              <input
-                ref={searchRef}
-                aria-label="Global sökning"
-                placeholder="Sök efter uppdrag, agenter eller insikter…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-              <kbd>⌘ K</kbd>
-              {query && (
-                <div className="search-results">
-                  <div className="search-caption">SÖKRESULTAT</div>
-                  {searchResults.length ? (
-                    searchResults.map((result) => (
-                      <button
-                        key={result.id}
-                        onClick={() => {
-                          go(result.page);
-                          if (result.task) setModal(result.task);
-                          else setListQuery(result.title);
-                        }}
-                      >
-                        <span>{result.title}</span>
-                        <small>{result.type}</small>
-                        <ArrowUpRight size={14} />
-                      </button>
-                    ))
-                  ) : (
-                    <p>Inga resultat för ”{query}”.</p>
-                  )}
-                </div>
-              )}
+            <div className="breadcrumb">
+              <span className="breadcrumb-brand">GARON</span>
+              <ChevronRight size={12} />
+              <span>{title}</span>
             </div>
-            <div className="topbar-right">
-              <span className={`online-pill ${error ? "offline" : ""}`}>
-                <span className="green-dot" />
-                {error ? "Anslutning saknas" : "Systemet online"}
-              </span>
-              <span className="topbar-divider" />
-              <button
-                className={`notification-button icon-button ${approvals.length ? "has-notification" : ""}`}
-                aria-label="Visa aviseringar"
-                aria-expanded={notifications}
-                onClick={() => setNotifications((value) => !value)}
-              >
-                <Bell size={18} />
-              </button>
-            </div>
-            {notifications && (
-              <div className="notification-popover">
-                <h3>Aviseringar</h3>
-                {approvals.length ? (
-                  <button onClick={() => go("approvals")}>
-                    <ShieldCheck size={20} />
-                    <span>
-                      <strong>
-                        {approvals.length} uppdrag väntar på beslut
-                      </strong>
-                      <small>Öppna Godkännanden för att granska.</small>
-                    </span>
-                    <ChevronRight size={16} />
-                  </button>
-                ) : (
-                  <div className="notification-empty">
-                    <CheckCheck size={24} />
-                    <p>Du är uppdaterad.</p>
-                    <small>Inga väntande godkännanden.</small>
-                  </div>
-                )}
-              </div>
-            )}
+            <span className="private-label">
+              <ShieldCheck size={13} />
+              Privat arbetsyta
+            </span>
           </header>
-
-          <main className="content" id="main-content">
+          <main id="main-content">
             {error && (
-              <div className="notice warning">
-                {error}{" "}
+              <div className="connection-error" role="alert">
+                {error}
                 <button
-                  onClick={() => load().catch((e) => setError(e.message))}
+                  onClick={() =>
+                    void load().catch((error) => setError(errorMessage(error)))
+                  }
                 >
                   Försök igen
                 </button>
               </div>
             )}
-            <div
-              className={`page-heading ${page === "overview" ? "overview-heading" : ""}`}
-            >
-              <div>
-                <div className="eyebrow">
-                  {page === "overview"
-                    ? `VÄLKOMMEN TILLBAKA, ${state.settings.name.toLocaleUpperCase("sv")}`
-                    : "GARON · HUVUDKONTOR"}
-                </div>
-                <h1>
-                  {page === "tasks" ? "Fristående uppdrag" : pageInfo.title}
-                  <span className="heading-dot">.</span>
-                </h1>
-                <p>{pageInfo.description}</p>
+            {storageError && (
+              <div className="connection-error" role="alert">
+                Utseendet ändras, men webbläsaren tillåter inte att
+                inställningarna sparas.
               </div>
-              <div className="heading-right">
-                {page === "overview" ? (
-                  <>
-                    <span className="today-date">
-                      {new Date().toLocaleDateString("sv-SE", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                        timeZone: "Europe/Stockholm",
-                      })}
-                    </span>
-                    <button
-                      className="button primary"
-                      onClick={() => go("chat")}
-                    >
-                      <MessageSquare size={16} />
-                      Prata med GARON
-                    </button>
-                  </>
-                ) : page === "tasks" ? (
-                  <button
-                    className="button primary"
-                    onClick={() => setModal("task")}
-                  >
-                    <Plus size={16} />
-                    Nytt uppdrag
-                  </button>
-                ) : page === "agents" ? (
-                  <button
-                    className="button primary"
-                    onClick={() => setModal("agent")}
-                  >
-                    <Plus size={16} />
-                    Skapa agent
-                  </button>
-                ) : page === "memory" ? (
-                  <button
-                    className="button primary"
-                    onClick={() => setModal("note")}
-                  >
-                    <Plus size={16} />
-                    Nytt minne
-                  </button>
-                ) : null}
-              </div>
-              {page === "overview" && (
-                <div className="planet" aria-hidden="true">
-                  <div />
-                  <i />
-                  <b />
-                </div>
-              )}
-            </div>
-
-            {page === "overview" && <HeadquartersPage />}
-
-            {page === "businesses" && <BusinessesPage />}
-            {page === "projects" && <ProjectsPage />}
-            {page === "leadership" && <LeadershipPage />}
-            {page === "integrations" && <IntegrationsPage />}
-
-            {page === "tasks" && <TasksPage />}
-
-            {page === "agents" && <AgentsPage />}
-
-            {page === "activity" && <ActivityPage />}
-
-            {page === "approvals" && <ApprovalsPage />}
-
-            {page === "finance" && <FinancePage />}
-
-            {page === "memory" && <MemoryPage />}
-
-            {page === "chat" && <PartnerPage />}
-
-            {page === "settings" && <SettingsPage />}
+            )}
+            {route.page === "home" ? (
+              <Home />
+            ) : route.page === "businesses" ? (
+              <Businesses />
+            ) : route.page === "business" ? (
+              <BusinessDetail />
+            ) : route.page === "settings" ? (
+              <SettingsPage />
+            ) : route.page === "approvals" ? (
+              <Approvals />
+            ) : route.page === "inbox" ? (
+              <InboxPage />
+            ) : route.page === "scheduled" ? (
+              <Scheduled />
+            ) : (
+              <ActivityPage />
+            )}
           </main>
         </div>
-
-        <WorkspaceDialog />
+        {businessDialog && (
+          <BusinessDialog
+            business={businessDialog === "new" ? null : businessDialog}
+            onClose={() => setBusinessDialog(null)}
+          />
+        )}{" "}
         {toast && (
-          <div className="toast" role="status">
+          <div className="g-toast" role="status">
             <span>{toast}</span>
             <button
               className="icon-button"
               aria-label="Stäng meddelande"
               onClick={() => setToast("")}
             >
-              <X size={16} />
+              <X size={15} />
             </button>
           </div>
         )}
       </div>
-    </WorkspaceProvider>
+    </GaronProvider>
   );
 }
