@@ -9,6 +9,10 @@ import { register as registerAgents } from "./modules/agents.js";
 import { register as registerMemory } from "./modules/memory.js";
 import { register as registerSettings } from "./modules/settings.js";
 import { register as registerBusinesses } from "./modules/businesses.js";
+import { dirname } from "node:path";
+import { createVault } from "./core/vault.js";
+import { createAI } from "./core/ai4.js";
+import { registerV4 } from "./v4/api.js";
 
 // Runtime AI is disabled by default, independently of credentials or frontend controls.
 // allowAI is an internal test seam, never sourced from environment or request data.
@@ -23,6 +27,9 @@ export function createApp({
   const app = express();
   registerHttpPolicy(app);
   const chat = registerChat(app, store, { env, fetchImpl, allowAI });
+  const vault = createVault(database === ":memory:" ? null : dirname(database));
+  const ai4 = createAI(store, vault, { env, fetchImpl });
+  const v4 = registerV4(app, store, ai4, vault, { database, fetchImpl });
   app.get("/api/health", (_req, res) =>
     res.json({ ok: true, storage: "sqlite" }),
   );
@@ -37,6 +44,34 @@ export function createApp({
       usage: all("usage"),
       settings: settings(),
       ai: chat.state(),
+      v4: {
+        system: {
+          dataFile: resolve(database),
+          version: "4.0",
+          scheduler: "internal",
+        },
+        ui: v4.ui(),
+        ai: ai4.state(),
+        chats: Object.fromEntries(
+          ["garon", "openai", "anthropic"].map((channel) => [
+            channel,
+            [
+              ...(channel === "garon" ? all("message").reverse() : []),
+              ...all("chatMessage")
+                .filter((row) => row.channel === channel)
+                .reverse(),
+            ],
+          ]),
+        ),
+        drafts: all("draft"),
+        memory: all("memory"),
+        approvals: all("approval"),
+        schedules: all("schedule"),
+        inbox: all("inbox"),
+        delegations: all("delegation"),
+        projects: all("project"),
+        connections: all("connection"),
+      },
     }),
   );
   registerTasks(app, store);
@@ -70,8 +105,15 @@ export function createApp({
   );
   app.use((error, _req, res, _next) =>
     res.status(error.status || 500).json({
-      error: error.status ? error.message : "Ett oväntat serverfel uppstod.",
+      error:
+        error.type === "entity.parse.failed"
+          ? "Ogiltig JSON. Kontrollera inmatningen."
+          : error.type === "entity.too.large"
+            ? "Filen eller begäran är för stor (max 5 MB)."
+            : error.status
+              ? error.message
+              : "Ett oväntat serverfel uppstod.",
     }),
   );
-  return { app, close: store.close };
+  return { app, close: store.close, tick: v4.tick, store };
 }

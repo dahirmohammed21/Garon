@@ -14,7 +14,9 @@ export type Route = {
     | "activity"
     | "businesses"
     | "business"
-    | "settings";
+    | "settings"
+    | "leadership"
+    | "agents";
   businessId?: string;
   section?: string;
 };
@@ -33,6 +35,8 @@ export function readRoute(): Route {
     return { page: "settings", section: businessId || "appearance" };
   if (
     [
+      "leadership",
+      "agents",
       "approvals",
       "inbox",
       "scheduled",

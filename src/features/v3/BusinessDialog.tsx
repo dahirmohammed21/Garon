@@ -23,11 +23,15 @@ export default function BusinessDialog({
         ...(data.tasks
           ? [{ id: "tasks", title: "Uppdrag", view: "tasks" }]
           : []),
+        ...(data.projects
+          ? [{ id: "projects", title: "Projekt", view: "projects" }]
+          : []),
         ...(data.agents
           ? [{ id: "agents", title: "Agenter", view: "agents" }]
           : []),
         ...business.sections.filter(
-          (section) => !["overview", "tasks", "agents"].includes(section.id),
+          (section) =>
+            !["overview", "tasks", "agents", "projects"].includes(section.id),
         ),
       ];
     }
@@ -76,6 +80,16 @@ export default function BusinessDialog({
         {business && (
           <fieldset className="business-sections">
             <legend>Verksamhetens meny</legend>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                name="projects"
+                defaultChecked={business.sections.some(
+                  (section) => section.id === "projects",
+                )}
+              />
+              Visa Projekt
+            </label>
             <p>
               Översikt finns alltid. Lägg vid behov till platser för framtida
               funktioner.
@@ -88,7 +102,7 @@ export default function BusinessDialog({
                   (section) => section.id === "tasks",
                 )}
               />
-              Visa Uppdrag <span>Förberedd vy</span>
+              Visa Uppdrag <span>Valfri funktion</span>
             </label>
             <label className="check-row">
               <input
@@ -98,7 +112,7 @@ export default function BusinessDialog({
                   (section) => section.id === "agents",
                 )}
               />
-              Visa Agenter <span>Förberedd vy</span>
+              Visa Agenter <span>Valfri funktion</span>
             </label>
           </fieldset>
         )}

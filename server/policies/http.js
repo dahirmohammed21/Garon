@@ -32,5 +32,5 @@ export function registerHttpPolicy(app) {
     }
     next();
   });
-  app.use(express.json({ limit: "128kb" }));
+  app.use(express.json({ limit: "5mb" }));
 }

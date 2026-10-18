@@ -32,7 +32,7 @@ const categories = [
   { id: "models", title: "AI-modeller", icon: Brain },
   { id: "general", title: "Allmänt", icon: SlidersHorizontal },
 ];
-function Appearance() {
+export function Appearance() {
   const { preferences, update } = useTheme();
   return (
     <>
@@ -40,7 +40,7 @@ function Appearance() {
         <h2>Gör GARON till ditt</h2>
         <p>
           En lugn arbetsmiljö, i de färger du trivs med. Ändringar sparas direkt
-          i den här webbläsaren.
+          i din lokala databas.
         </p>
       </div>
       <section className="settings-section">
@@ -283,7 +283,7 @@ function Memory() {
     </>
   );
 }
-function Plugins() {
+export function Plugins() {
   return (
     <>
       <div className="settings-intro">

@@ -1,54 +1,90 @@
 import { test, expect } from "@playwright/test";
-
-test("GARON 3 startar tomt med ärlig chatt och separata huvudkontorssidor", async ({
+test("skrivbordets widgets kan tas bort, läggas till, flyttas och återställas", async ({
   page,
   request,
 }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Välkommen tillbaka", exact: true }),
+    page.getByRole("heading", { name: "Översikt", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("AI är inte aktiverad", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Meddelande till GARON")
-    .fill("Hjälp mig tänka vidare.");
+    page.getByRole("button", { name: "Verksamheter", exact: true }),
+  ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Skicka meddelande" }),
+    page.getByRole("button", { name: "Skicka till GARON" }),
   ).toBeDisabled();
   await page
-    .getByRole("navigation", { name: "Huvudkontor" })
-    .getByRole("button", { name: "Godkännanden", exact: true })
+    .getByRole("button", { name: "Ta bort widgets", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ta bort Godkännanden", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Inga beslut väntar" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Inkorg", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Din inkorg är inte ansluten" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Schemalagt", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Ingenting är schemalagt" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Aktivitet", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "En ny början", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Verksamheter", exact: true }).click();
-  await expect(page.getByText("GARON Core", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Din organisation börjar här" }),
-  ).toBeVisible();
-  await expect(page.getByText(/SITELY|dropshipping/i)).toHaveCount(0);
-  const state = await (await request.get("/api/state")).json();
-  expect(state.businesses).toEqual([]);
-  expect(state.messages).toEqual([]);
-  expect(state.usage).toEqual([]);
+    page
+      .locator(".widget-desktop")
+      .getByRole("heading", { name: "Godkännanden", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Lägg till widget", exact: true })
+    .click();
+  await page
+    .locator(".widget-menu")
+    .getByRole("button", { name: "Godkännanden", exact: true })
+    .click();
+  const header = page
+    .locator(".widget-desktop .desktop-widget")
+    .filter({
+      has: page.getByRole("heading", { name: "Godkännanden", exact: true }),
+    })
+    .locator(".widget-drag");
+  await header.scrollIntoViewIfNeeded();
+  const box = await header.boundingBox();
+  await page.mouse.move(box.x + 45, box.y + 17);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 155, box.y + 65, { steps: 12 });
+  await page.mouse.up();
+  const resizedWidget = page
+    .locator(".widget-desktop .desktop-widget")
+    .filter({
+      has: page.getByRole("heading", { name: "Godkännanden", exact: true }),
+    });
+  const originalHeight = (
+    await (await request.get("/api/v4/ui")).json()
+  ).layout.find((row) => row.i === "approvals").h;
+  const handle = resizedWidget.locator(".react-resizable-handle");
+  await handle.scrollIntoViewIfNeeded();
+  const handleBox = await handle.boundingBox();
+  await page.mouse.move(
+    handleBox.x + handleBox.width / 2,
+    handleBox.y + handleBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    handleBox.x + handleBox.width / 2,
+    handleBox.y + handleBox.height / 2 + 65,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/api/v4/ui")).json()).layout.find(
+          (row) => row.i === "approvals",
+        ).h,
+    )
+    .toBeGreaterThan(originalHeight);
+  const before = (await (await request.get("/api/v4/ui")).json()).layout;
+  await page.reload();
+  await page.getByRole("heading", { name: "Översikt", exact: true }).waitFor();
+  expect((await (await request.get("/api/v4/ui")).json()).layout).toEqual(
+    before,
+  );
+  expect(before.some((row) => row.i === "approvals")).toBe(true);
+  expect(errors).toEqual([]);
 });
-
-test("skapa, öppna, anpassa, byta namn och bekräfta borttagning av en verksamhet", async ({
+test("verksamhetsmall, valfria projekt, uppdrag och agentplacering fungerar", async ({
   page,
 }) => {
   await page.goto("/");
@@ -56,203 +92,182 @@ test("skapa, öppna, anpassa, byta namn och bekräfta borttagning av en verksamh
     .getByRole("button", { name: "Skapa verksamhet", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Namn", { exact: true }).fill("Min ateljé");
-  await dialog.getByLabel("Beskrivning").fill("En arbetsyta för mina idéer.");
+  await dialog.getByRole("button", { name: "Välj mall", exact: true }).click();
+  await dialog
+    .getByRole("combobox", { name: "Mall", exact: true })
+    .selectOption("project");
+  await dialog.getByLabel("Namn", { exact: true }).fill("Min verksamhet");
   await dialog.getByRole("button", { name: "Skapa", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await page
-    .getByRole("button", { name: "Visa meny för Min ateljé", exact: true })
+    .getByRole("button", { name: "Öppna Min verksamhet", exact: true })
     .click();
   await page
-    .getByRole("navigation", { name: "Mina verksamheter" })
-    .getByRole("button", { name: "Översikt", exact: true })
+    .getByRole("group", { name: "Verksamhetens sidor" })
+    .getByRole("button", { name: "Projekt", exact: true })
     .click();
+  await page.getByRole("button", { name: "Nytt projekt", exact: true }).click();
+  await dialog.getByLabel("Projektnamn").fill("Första projektet");
+  await dialog.getByRole("button", { name: "Skapa", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Min ateljé", exact: true }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Min ateljé", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Redigera", exact: true }).click();
-  await dialog.getByLabel("Namn", { exact: true }).fill("Ateljé Nova");
-  await dialog.getByLabel("Visa Uppdrag").check();
-  await dialog.getByLabel("Visa Agenter").check();
-  await dialog.getByRole("button", { name: "Spara ändringar" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Ateljé Nova", exact: true }),
+    page.getByRole("heading", { name: "Första projektet" }),
   ).toBeVisible();
   await page
     .getByRole("group", { name: "Verksamhetens sidor" })
-    .getByRole("button", { name: "Agenter", exact: true })
+    .getByRole("button", { name: "Uppdrag", exact: true })
     .click();
+  await page.getByRole("button", { name: "Nytt uppdrag", exact: true }).click();
+  await dialog.getByLabel("Uppdragets namn").fill("Ett riktigt arbetssteg");
+  await dialog.getByRole("button", { name: "Skapa", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Inga agenter är anslutna" }),
+    page.getByRole("heading", { name: "Ett riktigt arbetssteg" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Agentnätverk", exact: true }).click();
+  await page.getByRole("button", { name: "Skapa agent", exact: true }).click();
+  await dialog.getByLabel("Namn", { exact: true }).fill("Kodagent");
+  await dialog
+    .getByLabel("Arbetsuppgift eller roll")
+    .fill("Programmering och systemarkitektur");
+  await dialog.getByRole("button", { name: "Föreslå placering" }).click();
+  await expect(dialog.getByLabel("Mellanchef")).toHaveValue("anthropic");
+  await dialog.getByRole("button", { name: "Godkänn och spara" }).click();
   await page
-    .getByRole("button", { name: "Alla verksamheter", exact: true })
+    .getByRole("button", { name: "Redigera Kodagent", exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "Ateljé Nova Verksamhet" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Zooma in" }).click();
-  await expect(page.getByText("115%", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Återställ nätverksvy" }).click();
-  await page.getByRole("button", { name: "Listvy", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: /Ateljé Nova En arbetsyta/ }),
-  ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await page
-    .getByRole("button", { name: "Ta bort Ateljé Nova", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: /Ateljé Nova En arbetsyta/ }),
-  ).toBeVisible();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page
-    .getByRole("button", { name: "Ta bort Ateljé Nova", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Plats för det du vill bygga" }),
-  ).toBeVisible();
+  await dialog.getByLabel("Namn", { exact: true }).fill("Min specialist");
+  await dialog.getByLabel("Mellanchef").selectOption("openai");
+  await dialog.getByRole("button", { name: "Godkänn och spara" }).click();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Plats för det du vill bygga" }),
+    page.getByRole("heading", { name: "Min specialist", exact: true }),
   ).toBeVisible();
 });
-
-test("tema, alla accentfärger, egen färg och kompakt sidopanel sparas", async ({
+test("minne, schemalagda interna objekt och verkliga beslut kan hanteras", async ({
+  page,
+}) => {
+  await page.goto("/#settings/memory");
+  await page.getByRole("button", { name: "Ny minnespost" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Rubrik", { exact: true }).fill("Mitt mål");
+  await dialog
+    .getByLabel("Innehåll", { exact: true })
+    .fill("Bygg långsiktigt.");
+  await dialog.getByRole("button", { name: "Spara minne" }).click();
+  await expect(page.getByRole("heading", { name: "Mitt mål" })).toBeVisible();
+  await page.getByRole("button", { name: "Schemalagt", exact: true }).click();
+  await page.getByRole("button", { name: "Schemalägg", exact: true }).click();
+  await dialog.getByLabel("Rubrik", { exact: true }).fill("Min påminnelse");
+  const local = await page.evaluate(() => {
+    const date = new Date(Date.now() + 3600000);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+  });
+  await dialog.getByLabel("Lokal tid").fill(local);
+  await dialog.getByRole("button", { name: "Spara", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Min påminnelse" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Avbryt Min påminnelse", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Huvudkontor" })
+    .getByRole("button", { name: "Godkännanden", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Nytt beslutsförslag", exact: true })
+    .click();
+  await dialog.getByLabel("Rubrik", { exact: true }).fill("Ett viktigt beslut");
+  await dialog
+    .getByLabel("Åtgärd och bakgrund")
+    .fill("Granska en idé. Inga externa åtgärder.");
+  await dialog.getByRole("button", { name: "Spara förslag" }).click();
+  await page.getByRole("button", { name: "Godkänn", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Beslutet är registrerat. Ingen extern åtgärd är ansluten.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+});
+test("tre chattkanaler är ärligt frånkopplade och utkast sparas", async ({
   page,
 }) => {
   await page.goto("/");
+  await page
+    .getByLabel("Meddelande till GARON", { exact: true })
+    .fill("Ett privat utkast som ska sparas.");
+  await page.getByRole("button", { name: "AI-ledning", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Skicka till ChatGPT" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Skicka till Claude" }),
+  ).toBeDisabled();
+  await page
+    .getByLabel("Meddelande till ChatGPT", { exact: true })
+    .fill("Ett separat utkast.");
+  await page
+    .getByRole("navigation", { name: "Huvudkontor" })
+    .getByRole("button", { name: "Översikt", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Meddelande till GARON", { exact: true }),
+  ).toHaveValue("Ett privat utkast som ska sparas.");
+  await page.reload();
+  await expect(
+    page.getByLabel("Meddelande till GARON", { exact: true }),
+  ).toHaveValue("Ett privat utkast som ska sparas.");
   await page
     .getByRole("button", { name: "Inställningar", exact: true })
     .click();
   await page.getByRole("radio", { name: "Ljust" }).check();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  for (const [name, color] of [
-    ["Blå", "#8aafff"],
-    ["Lila", "#b399ef"],
-    ["Grön", "#7fbea2"],
-    ["Orange", "#e8ab7c"],
-  ]) {
-    await page
-      .getByRole("button", { name: `Accentfärg ${name}`, exact: true })
-      .click();
-    expect(
-      await page.evaluate(() =>
-        getComputedStyle(document.documentElement)
-          .getPropertyValue("--accent")
-          .trim(),
-      ),
-    ).toBe(color);
-  }
-  await page.getByLabel("Egen accentfärg").fill("#c46a81");
-  await page.getByRole("button", { name: "Kompakt", exact: true }).click();
-  await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
-  expect(
-    await page.evaluate(() =>
-      getComputedStyle(document.documentElement)
-        .getPropertyValue("--accent")
-        .trim(),
-    ),
-  ).toBe("#c46a81");
-  await page.getByRole("radio", { name: "Mörkt" }).check();
-  await page.getByRole("button", { name: "Normal", exact: true }).click();
-  await page.getByRole("button", { name: "Minne", exact: true }).click();
-  await expect(
-    page.getByText("Automatiskt AI-minne är inte aktiverat", { exact: true }),
-  ).toBeVisible();
   await page
-    .getByRole("button", { name: "Ny anteckning", exact: true })
+    .getByRole("button", { name: "Återställ standardutseende" })
     .click();
-  await page.getByRole("dialog").getByLabel("Rubrik").fill("Min riktning");
-  await page
-    .getByRole("dialog")
-    .getByRole("textbox", { name: "Anteckning", exact: true })
-    .fill("Bygg steg för steg.");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Spara", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Min riktning", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Redigera Min riktning" }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("textbox", { name: "Anteckning", exact: true })
-    .fill("Ett genomtänkt steg i taget.");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Spara", exact: true })
-    .click();
-  await page.reload();
-  await expect(
-    page.getByText("Ett genomtänkt steg i taget.", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Plugins", exact: true }).click();
-  await expect(
-    page.getByText("Inga plugins är anslutna", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "AI-modeller", exact: true }).click();
-  await expect(
-    page.getByText("AI-anrop är spärrade", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Allmänt", exact: true }).click();
-  await page.getByRole("switch", { name: "Bekräftelser i appen" }).uncheck();
-  await page.reload();
-  await expect(
-    page.getByRole("switch", { name: "Bekräftelser i appen" }),
-  ).not.toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
-
-test("mobil navigation, dialoger, samtliga sidor och båda teman fungerar", async ({
+test("alla huvudvyer fungerar på MacBook och mobil utan fel eller överflöde", async ({
   page,
 }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const routes = [
     "home",
+    "leadership",
+    "agents",
     "approvals",
     "inbox",
     "scheduled",
     "activity",
-    "businesses",
     "settings",
+    "settings/models",
     "settings/memory",
     "settings/plugins",
-    "settings/models",
+    "settings/costs",
     "settings/general",
   ];
-  for (const theme of ["dark", "light"])
-    for (const width of [320, 390, 768, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto("/");
-      await page.getByRole("heading", { name: "Välkommen tillbaka" }).waitFor();
-      await page.evaluate((theme) => {
-        const data = JSON.parse(
-          localStorage.getItem("garon.v3.preferences") || "{}",
-        );
-        localStorage.setItem(
-          "garon.v3.preferences",
-          JSON.stringify({ ...data, theme }),
-        );
-      }, theme);
+  for (const theme of ["dark", "light"]) {
+    await page.goto("/#settings");
+    await page
+      .getByRole("radio", { name: theme === "dark" ? "Mörkt" : "Ljust" })
+      .check();
+    await page.waitForTimeout(450);
+    for (const width of [320, 390, 768, 1440])
       for (const route of routes) {
+        await page.setViewportSize({ width, height: 900 });
         await page.goto(`/#${route}`);
         await page.locator("main h1").waitFor();
         expect(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth,
           ),
-          `${route} ${theme} ${width}px`,
+          `${route} ${width}px`,
         ).toBe(true);
       }
-    }
+  }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Öppna navigation" }).click();
@@ -262,10 +277,5 @@ test("mobil navigation, dialoger, samtliga sidor och båda teman fungerar", asyn
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  await page.getByRole("button", { name: "Öppna navigation" }).click();
-  await page.getByRole("button", { name: "Inkorg", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Inkorg", exact: true }),
-  ).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -11,49 +12,77 @@ export type Preferences = {
   density: "normal" | "compact";
   confirmations: boolean;
 };
-const defaults: Preferences = {
+export const appearanceDefaults: Preferences = {
   theme: "dark",
-  accent: "#78b5c4",
+  accent: "#315099",
   density: "normal",
   confirmations: true,
 };
-function load(): Preferences {
+function valid(value: any): value is Preferences {
+  return (
+    value &&
+    ["dark", "light"].includes(value.theme) &&
+    /^#[0-9a-f]{6}$/i.test(value.accent) &&
+    ["normal", "compact"].includes(value.density) &&
+    typeof value.confirmations === "boolean"
+  );
+}
+function load() {
   try {
     const value = JSON.parse(
-      localStorage.getItem("garon.v3.preferences") || "{}",
+      localStorage.getItem("garon.v4.preferences") || "null",
     );
-    return {
-      theme: value.theme === "light" ? "light" : "dark",
-      accent: /^#[0-9a-f]{6}$/i.test(value.accent)
-        ? value.accent
-        : defaults.accent,
-      density: value.density === "compact" ? "compact" : "normal",
-      confirmations:
-        typeof value.confirmations === "boolean" ? value.confirmations : true,
-    };
+    return valid(value) ? value : appearanceDefaults;
   } catch {
-    return defaults;
+    return appearanceDefaults;
   }
 }
 function foreground(hex: string) {
-  const colors = [1, 3, 5]
-    .map((start) => parseInt(hex.slice(start, start + 2), 16) / 255)
-    .map((value) =>
-      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
-    );
-  return colors[0] * 0.2126 + colors[1] * 0.7152 + colors[2] * 0.0722 > 0.179
+  const c = [1, 3, 5]
+    .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722 > 0.179
     ? "#111519"
-    : "#ffffff";
+    : "#fff";
 }
-type ThemeValue = {
+const Context = createContext<{
   preferences: Preferences;
   update: (value: Partial<Preferences>) => void;
   storageError: boolean;
-};
-const Context = createContext<ThemeValue | null>(null);
+} | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preferences, setPreferences] = useState(load);
   const [storageError, setStorageError] = useState(false);
+  const pending = useRef<Preferences | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  async function persist(value: Preferences) {
+    try {
+      const response = await fetch("/api/v4/ui", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferences: value }),
+        keepalive: true,
+      });
+      if (!response.ok) throw new Error();
+      if (pending.current === value) pending.current = null;
+      setStorageError(false);
+    } catch {
+      setStorageError(true);
+    }
+  }
+  useEffect(() => {
+    let active = true;
+    fetch("/api/v4/ui")
+      .then((r) => r.json())
+      .then((value) => {
+        if (active && !pending.current && valid(value.preferences))
+          setPreferences(value.preferences);
+      })
+      .catch(() => setStorageError(true));
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme;
     document.documentElement.dataset.density = preferences.density;
@@ -63,21 +92,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       foreground(preferences.accent),
     );
     try {
-      localStorage.setItem("garon.v3.preferences", JSON.stringify(preferences));
-      setStorageError(false);
+      localStorage.setItem("garon.v4.preferences", JSON.stringify(preferences));
     } catch {
       setStorageError(true);
     }
   }, [preferences]);
+  useEffect(() => {
+    const flush = () => {
+      if (pending.current) void persist(pending.current);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      if (timer.current) clearTimeout(timer.current);
+      flush();
+    };
+  }, []);
+  function update(value: Partial<Preferences>) {
+    const next = { ...preferences, ...value };
+    setPreferences(next);
+    pending.current = next;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void persist(next), 350);
+  }
   return (
-    <Context.Provider
-      value={{
-        preferences,
-        update: (value) =>
-          setPreferences((current) => ({ ...current, ...value })),
-        storageError,
-      }}
-    >
+    <Context.Provider value={{ preferences, update, storageError }}>
       {children}
     </Context.Provider>
   );

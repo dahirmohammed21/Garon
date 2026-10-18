@@ -8,3 +8,10 @@ dist/
 *.tsbuildinfo
 playwright-report/
 test-results/
+node_modules-backup-*/
+**/.vault-key
+**/secrets.enc
+**/secrets.enc.tmp
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

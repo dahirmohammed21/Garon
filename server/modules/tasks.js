@@ -11,12 +11,20 @@ export function register(app, store) {
     if (!["low", "normal", "high"].includes(priority))
       fail("Ogiltig prioritet.");
     if (req.body.agentId) get("agent", req.body.agentId);
+    if (req.body.businessId) get("business", req.body.businessId);
+    if (req.body.projectId) {
+      const project = get("project", req.body.projectId);
+      if (project.businessId !== req.body.businessId)
+        fail("Projektet tillhör en annan verksamhet.");
+    }
     const task = put("task", {
       id: id(),
       title,
       description,
       priority,
       agentId: req.body.agentId || null,
+      businessId: req.body.businessId || null,
+      projectId: req.body.projectId || null,
       status: req.body.requiresApproval ? "approval" : "pending",
       createdAt: now(),
       updatedAt: now(),

@@ -16,6 +16,10 @@ export function register(app, store) {
     if (req.body.name !== undefined)
       next.name = text(req.body.name, "Ditt namn", 60);
     saveSettings(next);
+    activity(
+      "Inställningar ändrade",
+      "Profil eller AI-budget har uppdaterats.",
+    );
     res.json(next);
   });
 }

@@ -14,6 +14,24 @@ function sections(value) {
     fail("Menyval måste ha unika id:n.");
   return parsed;
 }
+function plan(value) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object") fail("Ogiltigt verksamhetsförslag.");
+  const result = {};
+  for (const key of ["workAreas", "tasks", "agents"]) {
+    if (!Array.isArray(value[key]) || value[key].length > 5)
+      fail("Ogiltigt verksamhetsförslag.");
+    result[key] = value[key].map((item) => text(item, "Förslag", 300));
+  }
+  if (!["general", "services", "commerce", "project"].includes(value.template))
+    fail("Ogiltig mall.");
+  result.template = value.template;
+  result.visualStyle =
+    typeof value.visualStyle === "string"
+      ? value.visualStyle.slice(0, 500)
+      : "";
+  return result;
+}
 export function register(app, store) {
   const { all, get, put, remove, activity } = store;
   const name = (value, currentId) => {
@@ -36,9 +54,12 @@ export function register(app, store) {
   app.post("/api/businesses", (req, res) => {
     const item = {
       id: id(),
+      plan: plan(req.body.plan),
       name: name(req.body.name),
       description: description(req.body.description ?? ""),
-      sections: [{ id: "overview", title: "Översikt", view: "overview" }],
+      sections: req.body.sections
+        ? sections(req.body.sections)
+        : [{ id: "overview", title: "Översikt", view: "overview" }],
       createdAt: now(),
       updatedAt: now(),
     };

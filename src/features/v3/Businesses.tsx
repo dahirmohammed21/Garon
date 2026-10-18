@@ -1,3 +1,4 @@
+import BusinessWork from "../v4/BusinessWork";
 import { useRef, useState, type PointerEvent } from "react";
 import {
   ArrowLeft,
@@ -125,8 +126,8 @@ function BusinessNetwork() {
             <span className="node-mark">
               <Sparkles size={23} />
             </span>
-            <strong>GARON Core</strong>
-            <small>AI inte aktiverad</small>
+            <strong>Verksamheter</strong>
+            <small>Gemensamt huvudkontor</small>
           </div>
           {nodes.map(({ business, x, y }) => (
             <button
@@ -359,7 +360,7 @@ export function BusinessDetail() {
           <h2>En början, med plats att växa.</h2>
           <p>
             Verksamheten är sparad lokalt. Här kan du samla din organisation och
-            ditt arbete när fler funktioner ansluts.
+            ditt arbete med uppdrag, valfria projekt och kopplade agenter.
           </p>
           <div className="business-facts">
             <div>
@@ -367,19 +368,52 @@ export function BusinessDetail() {
               <strong>{date(business.createdAt, true)}</strong>
             </div>
             <div>
-              <span>AI-organisation</span>
-              <strong>Inte aktiverad</strong>
+              <span>Kopplade agentroller</span>
+              <strong>
+                {
+                  state.agents.filter((agent) =>
+                    agent.businessIds?.includes(business.id),
+                  ).length
+                }
+              </strong>
             </div>
             <div>
               <span>Arbetsyta</span>
               <strong>Lokalt sparad</strong>
             </div>
           </div>
+          {business.plan && (
+            <details className="saved-business-plan">
+              <summary>Granskat verksamhetsförslag</summary>
+              {(["workAreas", "tasks", "agents"] as const).map((key) => (
+                <div key={key}>
+                  <h3>
+                    {key === "workAreas"
+                      ? "Arbetsområden"
+                      : key === "tasks"
+                        ? "Föreslagna uppdrag"
+                        : "Föreslagna agentroller"}
+                  </h3>
+                  <ul>
+                    {business.plan![key].map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <p>{business.plan.visualStyle}</p>
+              <p>
+                Detta är sparade förslag. Uppdrag och agenter skapas separat.
+              </p>
+            </details>
+          )}
           <p className="small-note">
             Via Redigera kan du byta namn, ändra beskrivningen och välja vilka
-            förberedda sidor som visas.
+            sidor som visas.
           </p>
         </section>
+      ) : ["tasks", "agents", "projects"].includes(section.view) ? (
+        <BusinessWork businessId={business.id} view={section.view} />
       ) : (
         <BlankState
           icon={section.view === "agents" ? UsersRound : Folder}

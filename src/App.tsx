@@ -18,17 +18,15 @@ import {
   routeHash,
   type Route,
 } from "./lib/v3/navigation";
-import Sidebar from "./features/v3/Sidebar";
-import Home from "./features/v3/Home";
+import Sidebar from "./features/v4/Sidebar";
+import Home from "./features/v4/Home";
 import Businesses, { BusinessDetail } from "./features/v3/Businesses";
 import BusinessDialog from "./features/v3/BusinessDialog";
-import SettingsPage from "./features/v3/SettingsPage";
-import {
-  ActivityPage,
-  Approvals,
-  InboxPage,
-  Scheduled,
-} from "./features/v3/Pages";
+import BusinessCreate from "./features/v4/BusinessCreate";
+import Leadership, { AgentNetwork } from "./features/v4/Organization";
+import { Approvals, InboxPage, Scheduled } from "./features/v4/Operations";
+import SettingsPage from "./features/v4/Settings";
+import { ActivityPage } from "./features/v3/Pages";
 function errorMessage(error: unknown) {
   return error instanceof TypeError
     ? "Kunde inte nå servern. Kontrollera att GARON är igång."
@@ -174,12 +172,16 @@ export default function App() {
       ? "Ditt huvudkontor"
       : route.page === "business"
         ? currentBusiness?.name || "Verksamhet"
-        : route.page === "businesses"
-          ? "Verksamheter"
-          : route.page === "settings"
-            ? "Inställningar"
-            : headquarters.find((item) => item.page === route.page)?.title ||
-              "GARON";
+        : route.page === "leadership"
+          ? "AI-ledning"
+          : route.page === "agents"
+            ? "Agentnätverk"
+            : route.page === "businesses"
+              ? "Verksamheter"
+              : route.page === "settings"
+                ? "Inställningar"
+                : headquarters.find((item) => item.page === route.page)
+                    ?.title || "GARON";
   useEffect(() => {
     document.title = `${title} · GARON`;
   }, [title]);
@@ -266,12 +268,16 @@ export default function App() {
             )}
             {storageError && (
               <div className="connection-error" role="alert">
-                Utseendet ändras, men webbläsaren tillåter inte att
-                inställningarna sparas.
+                Utseendet kunde inte sparas. Kontrollera den lokala servern och
+                webbläsarens lagring.
               </div>
             )}
             {route.page === "home" ? (
               <Home />
+            ) : route.page === "leadership" ? (
+              <Leadership />
+            ) : route.page === "agents" ? (
+              <AgentNetwork />
             ) : route.page === "businesses" ? (
               <Businesses />
             ) : route.page === "business" ? (
@@ -289,11 +295,15 @@ export default function App() {
             )}
           </main>
         </div>
-        {businessDialog && (
-          <BusinessDialog
-            business={businessDialog === "new" ? null : businessDialog}
-            onClose={() => setBusinessDialog(null)}
-          />
+        {businessDialog === "new" ? (
+          <BusinessCreate onClose={() => setBusinessDialog(null)} />
+        ) : (
+          businessDialog && (
+            <BusinessDialog
+              business={businessDialog}
+              onClose={() => setBusinessDialog(null)}
+            />
+          )
         )}{" "}
         {toast && (
           <div className="g-toast" role="status">

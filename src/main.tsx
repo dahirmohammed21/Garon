@@ -11,6 +11,9 @@ import "@fontsource/manrope/latin-700.css";
 import "@fontsource/manrope/latin-800.css";
 import { ThemeProvider } from "./lib/v3/theme";
 import "./garon3.css";
+import "./garon4.css";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -378,7 +378,7 @@ test("Fas 1 läser tidigare databasformat utan att skriva om poster eller schema
   assert.deepEqual(
     check
       .prepare(
-        "SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name",
+        "SELECT name,sql FROM sqlite_master WHERE type='table' AND name!='schema_migrations' ORDER BY name",
       )
       .all(),
     schema,

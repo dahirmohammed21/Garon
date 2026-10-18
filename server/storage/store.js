@@ -1,15 +1,20 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, chmodSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fail, id, now } from "../core/validation.js";
+import { migrate } from "./migrations.js";
 export function createStore(database) {
   if (database !== ":memory:")
-    mkdirSync(dirname(resolve(database)), { recursive: true });
+    mkdirSync(dirname(resolve(database)), { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(database);
+  if (database !== ":memory:")
+    for (const file of [database, database + "-wal", database + "-shm"])
+      if (existsSync(file)) chmodSync(file, 0o600);
   db.exec(`PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, kind TEXT NOT NULL, data TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
     INSERT OR IGNORE INTO settings VALUES (1, '{"budget":10,"name":"Dahir"}');`);
+  migrate(db, database);
   const all = (kind) =>
     db
       .prepare("SELECT data FROM entities WHERE kind=? ORDER BY rowid DESC")
